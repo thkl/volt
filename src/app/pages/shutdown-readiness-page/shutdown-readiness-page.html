@@ -1,0 +1,131 @@
+<div class="shutdown-page">
+  <header class="page-heading">
+    <div>
+      <p class="eyebrow">POWER CONTINUITY</p>
+      <h1>Shutdown readiness</h1>
+      <p class="page-subtitle">Inventory dependent systems and record your coordination checks</p>
+    </div>
+    <span class="read-only-badge">Checklist only · no commands sent</span>
+  </header>
+
+  <aside class="shutdown-explainer" role="note">
+    <span class="info-mark" aria-hidden="true">i</span>
+    <p>
+      Volt can read UPS status and runtime, but it cannot inspect the
+      <code>upsmon</code> configuration on other machines or discover which equipment is plugged
+      into each UPS. “Operator confirmed” records your review; it does not mean Volt has tested a
+      shutdown.
+    </p>
+  </aside>
+
+  @if (error()) {
+    <p class="shutdown-message shutdown-error" role="alert">{{ error() }}</p>
+  }
+  @if (notice()) {
+    <p class="shutdown-message shutdown-success" role="status">{{ notice() }}</p>
+  }
+
+  @if (loading()) {
+    <section class="shutdown-empty" role="status">
+      <h2>Loading readiness checklist</h2>
+      <p>Reading saved system dependencies from Volt.</p>
+    </section>
+  } @else if (state.devices().length === 0) {
+    <section class="shutdown-empty">
+      <h2>No UPS devices available</h2>
+      <p>Add a NUT host and discover a UPS before recording shutdown dependencies.</p>
+    </section>
+  } @else {
+    <section class="shutdown-device-list" aria-label="UPS shutdown readiness checklists">
+      @for (device of state.devices(); track device.id) {
+        @let plan = planFor(device.id);
+        @let draft = draftFor(device.id);
+        <article class="shutdown-card">
+          <header class="shutdown-card-heading">
+            <div>
+              <p class="eyebrow">{{ device.hostName || 'UPS DEVICE' }}</p>
+              <h2>{{ device.name }}</h2>
+              <p class="device-model">{{ device.model }}</p>
+            </div>
+            <span
+              class="readiness-pill"
+              [class.readiness-good]="readinessTone(device) === 'good'"
+              [class.readiness-warning]="readinessTone(device) === 'warning'"
+              [class.readiness-muted]="readinessTone(device) === 'muted'"
+            >
+              {{ readinessLabel(device) }}
+            </span>
+          </header>
+
+          <div class="readiness-summary">
+            <span>Current status · {{ state.snapshotFor(device.id).status || 'Unavailable' }}</span>
+            <span>
+              Remaining runtime ·
+              {{ runtimeLabel(device.id) }}
+            </span>
+          </div>
+
+          <ul class="readiness-checklist">
+            @for (check of checksFor(device); track check.label) {
+              <li [class.check-complete]="check.complete" [class.check-pending]="!check.complete">
+                <span class="check-mark" aria-hidden="true">{{ check.complete ? '✓' : '·' }}</span>
+                <div>
+                  <strong>{{ check.label }}</strong>
+                  <p>
+                    {{ check.detail }}{{ check.operatorConfirmed ? ' · operator-confirmed' : '' }}
+                  </p>
+                </div>
+              </li>
+            }
+          </ul>
+
+          <form class="shutdown-form" (ngSubmit)="save(device.id)">
+            <label class="form-field">
+              <span>Systems that rely on this UPS</span>
+              <textarea
+                [ngModel]="draft.systemsText"
+                (ngModelChange)="updateSystems(device.id, $event)"
+                name="systems-{{ device.id }}"
+                rows="3"
+                maxlength="2525"
+                placeholder="One system per line · e.g. NAS, router, hypervisor"
+              ></textarea>
+              <small>Up to 25 names, 100 characters each.</small>
+            </label>
+
+            <label class="form-field coordination-field">
+              <span>Coordinated shutdown status</span>
+              <select
+                [ngModel]="draft.coordination"
+                (ngModelChange)="updateCoordination(device.id, $event)"
+                name="coordination-{{ device.id }}"
+              >
+                <option value="unverified">Not reviewed</option>
+                <option value="verified">Configured and tested</option>
+                <option value="not_configured">Not configured</option>
+              </select>
+              <small
+                >Choose “Configured and tested” only after verifying the dependent machines.</small
+              >
+            </label>
+
+            <div class="shutdown-form-footer">
+              <span>{{
+                plan.updatedAt
+                  ? 'Last reviewed · ' + pollLabel(plan.updatedAt)
+                  : 'Checklist has not been saved'
+              }}</span>
+              <button
+                class="save-button"
+                type="submit"
+                [disabled]="!state.apiConnected() || savingDeviceId() === device.id"
+              >
+                {{ savingDeviceId() === device.id ? 'Saving…' : 'Save checklist' }}
+              </button>
+            </div>
+          </form>
+        </article>
+      }
+    </section>
+  }
+</div>

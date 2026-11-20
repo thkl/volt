@@ -1,0 +1,159 @@
+<div class="diagnostics-page">
+  <header class="page-heading">
+    <div>
+      <p class="eyebrow">COLLECTOR HEALTH</p>
+      <h1>Diagnostics</h1>
+      <p class="page-subtitle">Connection state, polling history, and data reported by each UPS</p>
+    </div>
+    <span
+      class="diagnostic-banner"
+      [class.banner-good]="state.apiConnected()"
+      [class.banner-muted]="!state.apiConnected()"
+      role="status"
+    >
+      <span aria-hidden="true"></span
+      >{{ state.apiConnected() ? 'Backend connected' : 'Backend disconnected' }}
+    </span>
+  </header>
+
+  @if (state.backendMode() === 'none') {
+    <section class="diagnostic-empty">
+      <h2>No data sources configured</h2>
+      <p>Add a NUT host in Settings to see connection and UPS diagnostics.</p>
+      <a routerLink="/">Open overview</a>
+    </section>
+  } @else if (sources().length === 0) {
+    <section class="diagnostic-empty">
+      <h2>Waiting for collector diagnostics</h2>
+      <p>Volt will show host connection details and UPS readings when the backend connects.</p>
+    </section>
+  } @else {
+    <section class="source-list" aria-label="Configured data source diagnostics">
+      @for (source of sources(); track source.hostId) {
+        <article class="source-card">
+          <header class="source-heading">
+            <div>
+              <p class="eyebrow">{{ source.sourceType === 'nut' ? 'NUT HOST' : 'DATA SOURCE' }}</p>
+              <h2>{{ source.name }}</h2>
+              <p class="source-endpoint">{{ endpoint(source) }}</p>
+            </div>
+            <span
+              class="source-status"
+              [class.source-status-good]="source.connected && source.status === 'ready'"
+              [class.source-status-error]="!source.connected || source.status === 'degraded'"
+            >
+              <span aria-hidden="true"></span>
+              {{ connectionLabel(source) }}
+            </span>
+          </header>
+
+          <dl class="source-facts">
+            <div>
+              <dt>Collector phase</dt>
+              <dd>{{ phaseLabel(source.phase) }}</dd>
+            </div>
+            <div>
+              <dt>Discovered UPS devices</dt>
+              <dd>{{ source.discoveredUps }}</dd>
+            </div>
+            <div>
+              <dt>TLS</dt>
+              <dd>{{ source.tls ? 'Enabled' : 'Disabled' }}</dd>
+            </div>
+            <div>
+              <dt>Last poll</dt>
+              <dd>{{ pollLabel(source.lastPollAt) }}</dd>
+            </div>
+            <div>
+              <dt>Last discovery</dt>
+              <dd>{{ pollLabel(source.lastDiscoveryAt) }}</dd>
+            </div>
+            <div>
+              <dt>Consecutive failures</dt>
+              <dd>{{ source.consecutiveFailures }}</dd>
+            </div>
+          </dl>
+
+          @if (source.lastError) {
+            <div class="source-error" role="status">
+              <strong>{{ source.lastErrorCode ?? 'Collector error' }}</strong>
+              <p>{{ source.lastError }}</p>
+            </div>
+          }
+
+          @if (source.upsNames.length > 0) {
+            <div class="ups-diagnostics">
+              <h3>UPS readings</h3>
+              @for (device of devicesForSource(source.hostId); track device.id) {
+                @let snapshot = state.snapshotFor(device.id);
+                <section class="ups-diagnostic">
+                  <div class="ups-heading">
+                    <div>
+                      <h4>{{ device.name }}</h4>
+                      <p>{{ device.model }} · {{ snapshot.observedAt }}</p>
+                    </div>
+                    <span class="flow-state" [class.flow-warning]="snapshot.flow !== 'online'">
+                      {{ snapshot.status || 'Status unavailable' }}
+                    </span>
+                  </div>
+                  <dl class="ups-readings">
+                    <div>
+                      <dt>Battery</dt>
+                      <dd>
+                        {{
+                          snapshot.batteryCharge === null
+                            ? 'Not reported'
+                            : snapshot.batteryCharge + '%'
+                        }}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Runtime</dt>
+                      <dd>{{ runtimeLabel(snapshot.runtimeSeconds) }}</dd>
+                    </div>
+                    <div>
+                      <dt>Load</dt>
+                      <dd>
+                        {{
+                          snapshot.loadPercent === null
+                            ? 'Not reported'
+                            : snapshot.loadPercent + '%'
+                        }}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Input</dt>
+                      <dd>
+                        {{
+                          snapshot.inputVoltage === null
+                            ? 'Not reported'
+                            : snapshot.inputVoltage + ' V'
+                        }}
+                      </dd>
+                    </div>
+                  </dl>
+                  <p class="variable-list">
+                    <strong>Reported fields:</strong>
+                    {{ variables(device.id).join(', ') || 'None of the common diagnostic fields' }}
+                  </p>
+                  @if (missingVariables(device.id).length > 0) {
+                    <p class="variable-missing">
+                      <strong>Not reported:</strong> {{ missingVariables(device.id).join(', ') }}
+                    </p>
+                  }
+                </section>
+              }
+            </div>
+          } @else {
+            <p class="ups-empty">No UPS device has been discovered from this source yet.</p>
+          }
+        </article>
+      }
+    </section>
+  }
+
+  <p class="diagnostic-footnote">
+    Available fields depend on the UPS model and NUT driver. Volt reports missing values without
+    treating them as zero.
+  </p>
+</div>

@@ -101,6 +101,94 @@
   font-size: 0.7rem;
 }
 
+.event-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.event-device-filter {
+  display: grid;
+  gap: 3px;
+  color: #859194;
+  font-size: 0.62rem;
+  font-weight: 680;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.event-device-filter select {
+  min-height: 34px;
+  max-width: 220px;
+  padding: 0 28px 0 9px;
+  border: 1px solid #384246;
+  border-radius: 7px;
+  background: #111416;
+  color: #d8dfdd;
+  font: inherit;
+  font-size: 0.74rem;
+}
+
+.events-page .small-button {
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid #3b4549;
+  border-radius: 7px;
+  background: #1b2023;
+  color: #d9dfdd;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 560;
+}
+
+.events-page .small-button:hover:not(:disabled) {
+  border-color: #657176;
+  background: #242a2d;
+}
+
+.events-page .small-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.event-load-more {
+  display: flex;
+  justify-content: center;
+  padding: 16px;
+  border-top: 1px solid #232a2d;
+}
+
+.incident-error {
+  margin: 12px 18px 0;
+  padding: 10px 12px;
+  border: 1px solid rgb(255 97 92 / 35%);
+  border-radius: 8px;
+  background: rgb(255 97 92 / 8%);
+  color: #ffaaa6;
+  font-size: 0.78rem;
+}
+
+.live-note {
+  border-color: #234d36;
+  background: rgb(36 127 74 / 10%);
+  color: #a8e9bd;
+}
+
+.live-note span {
+  background: #22d66e;
+}
+
+.offline-note {
+  border-color: #4a3830;
+  background: rgb(146 85 50 / 12%);
+  color: #f0c1a1;
+}
+
+.offline-note span {
+  background: #e8975b;
+}
+
 .event-list {
   position: relative;
   margin: 0;
@@ -264,7 +352,24 @@
   }
 
   .event-panel-header {
+    align-items: flex-start;
+    flex-direction: column;
     padding-inline: 14px;
+  }
+
+  .event-controls {
+    width: 100%;
+    align-items: flex-end;
+  }
+
+  .event-device-filter {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .event-device-filter select {
+    width: 100%;
+    max-width: none;
   }
 
   .event-list::before {

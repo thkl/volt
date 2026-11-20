@@ -1,7 +1,11 @@
 import { Injectable, inject, signal } from '@angular/core';
-import { DemoEvent, DemoScenario, UpsSnapshot } from './demo-data';
+import { DemoScenario, UpsSnapshot } from './demo-data';
 import { BackendHost, BackendMode, DemoState, SourceDiagnostic } from './demo-state';
 import type { OutageRange, OutageSummary } from './outage-models';
+import type {
+  ShutdownReadinessPlan,
+  ShutdownReadinessPlanInput,
+} from './shutdown-readiness-models';
 
 interface BackendDevice {
   id: string;
@@ -42,14 +46,19 @@ interface BackendSnapshot {
   rawVariables: Record<string, string>;
 }
 
-interface BackendEvent {
+export interface IncidentEvent {
   id: number;
   deviceId: string;
   deviceName: string;
   occurredAt: string;
   type: string;
   detail: string;
-  tone: DemoEvent['tone'];
+  tone: 'good' | 'warning' | 'critical' | 'neutral';
+}
+
+export interface IncidentPage {
+  data: IncidentEvent[];
+  nextCursor: string | null;
 }
 
 export interface BackendHistoryPoint {
@@ -125,6 +134,7 @@ export interface AlertSettingsForm {
 export class LiveUpdates {
   private readonly state = inject(DemoState);
   readonly outageRevision = signal(0);
+  readonly eventRevision = signal(0);
   private socket: WebSocket | null = null;
   private reconnectTimer: number | undefined;
   private reconnectAttempts = 0;
@@ -229,6 +239,65 @@ export class LiveUpdates {
     }
   }
 
+  async getIncidentPage(
+    options: {
+      deviceId?: string;
+      cursor?: string;
+      limit?: number;
+    } = {},
+  ): Promise<IncidentPage> {
+    const query = new URLSearchParams({ limit: String(options.limit ?? 50) });
+    if (options.deviceId) query.set('device', options.deviceId);
+    if (options.cursor) query.set('cursor', options.cursor);
+
+    const response = await fetch(`/api/events?${query}`);
+    const payload: unknown = await response.json().catch(() => null);
+    if (!response.ok)
+      throw new Error(responseError(payload, 'Incident history could not be loaded'));
+    if (!isRecord(payload) || !Array.isArray(payload['data'])) {
+      throw new Error('The server returned invalid incident history');
+    }
+    const nextCursor = payload['nextCursor'];
+    if (nextCursor !== null && typeof nextCursor !== 'string') {
+      throw new Error('The server returned an invalid incident cursor');
+    }
+    return {
+      data: payload['data'].map(parseIncidentEvent),
+      nextCursor,
+    };
+  }
+
+  async getShutdownReadinessPlans(): Promise<ShutdownReadinessPlan[]> {
+    const response = await fetch('/api/shutdown-readiness');
+    const payload: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(responseError(payload, 'Shutdown readiness could not be loaded'));
+    }
+    if (!isRecord(payload) || !Array.isArray(payload['data'])) {
+      throw new Error('The server returned invalid shutdown readiness data');
+    }
+    return payload['data'].map(parseShutdownReadinessPlan);
+  }
+
+  async saveShutdownReadinessPlan(
+    deviceId: string,
+    plan: ShutdownReadinessPlanInput,
+  ): Promise<ShutdownReadinessPlan> {
+    const response = await fetch(`/api/shutdown-readiness/${encodeURIComponent(deviceId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(plan),
+    });
+    const payload: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(responseError(payload, 'Shutdown readiness could not be saved'));
+    }
+    if (!isRecord(payload) || !isRecord(payload['data'])) {
+      throw new Error('The server returned invalid shutdown readiness data');
+    }
+    return parseShutdownReadinessPlan(payload['data']);
+  }
+
   async getAlertSettings(): Promise<AlertSettings> {
     const response = await fetch('/api/alerts/settings');
     const payload: unknown = await response.json().catch(() => null);
@@ -299,7 +368,6 @@ export class LiveUpdates {
           this.recordHistoryReading(device.snapshot);
         }
       }
-      if (mode !== 'demo' && mode !== 'none') void this.refreshEvents();
       return;
     }
 
@@ -328,7 +396,6 @@ export class LiveUpdates {
           this.recordHistoryReading(device.snapshot);
         }
       }
-      if (mode !== 'demo' && mode !== 'none') void this.refreshEvents();
       return;
     }
 
@@ -351,6 +418,9 @@ export class LiveUpdates {
         });
       }
       const events = message['events'];
+      if (Array.isArray(events) && events.length > 0) {
+        this.eventRevision.update((revision) => revision + 1);
+      }
       if (
         Array.isArray(events) &&
         events.some(
@@ -362,14 +432,6 @@ export class LiveUpdates {
         )
       ) {
         this.outageRevision.update((revision) => revision + 1);
-      }
-      if (
-        Array.isArray(events) &&
-        events.length > 0 &&
-        this.state.backendMode() !== 'demo' &&
-        this.state.backendMode() !== 'none'
-      ) {
-        void this.refreshEvents();
       }
       return;
     }
@@ -383,17 +445,6 @@ export class LiveUpdates {
           normalizeSourceHealth(message['sources']),
         );
       }
-    }
-  }
-
-  private async refreshEvents(): Promise<void> {
-    try {
-      const response = await fetch('/api/events?limit=100');
-      if (!response.ok) return;
-      const payload = (await response.json()) as { data?: BackendEvent[] };
-      this.state.setBackendEvents((payload.data ?? []).map(normalizeEvent));
-    } catch {
-      // The live snapshot stream remains useful while an event refresh is retried later.
     }
   }
 
@@ -472,6 +523,41 @@ function responseError(payload: unknown, fallback: string): string {
     typeof payload['error']['message'] === 'string'
     ? payload['error']['message']
     : fallback;
+}
+
+function parseIncidentEvent(value: unknown): IncidentEvent {
+  if (
+    !isRecord(value) ||
+    typeof value['id'] !== 'number' ||
+    typeof value['deviceId'] !== 'string' ||
+    typeof value['deviceName'] !== 'string' ||
+    typeof value['occurredAt'] !== 'string' ||
+    typeof value['type'] !== 'string' ||
+    typeof value['detail'] !== 'string' ||
+    (value['tone'] !== 'good' &&
+      value['tone'] !== 'warning' &&
+      value['tone'] !== 'critical' &&
+      value['tone'] !== 'neutral')
+  ) {
+    throw new Error('The server returned an invalid incident');
+  }
+  return value as unknown as IncidentEvent;
+}
+
+function parseShutdownReadinessPlan(value: unknown): ShutdownReadinessPlan {
+  if (
+    !isRecord(value) ||
+    typeof value['deviceId'] !== 'string' ||
+    !Array.isArray(value['dependentSystems']) ||
+    !value['dependentSystems'].every((item) => typeof item === 'string') ||
+    (value['coordination'] !== 'unverified' &&
+      value['coordination'] !== 'verified' &&
+      value['coordination'] !== 'not_configured') ||
+    (value['updatedAt'] !== null && typeof value['updatedAt'] !== 'string')
+  ) {
+    throw new Error('The server returned invalid shutdown readiness data');
+  }
+  return value as unknown as ShutdownReadinessPlan;
 }
 
 function isAlertSettings(value: unknown): value is AlertSettings {
@@ -567,26 +653,4 @@ function formatObservedAt(value: string, freshness: BackendSnapshot['freshness']
   if (minutes < 60) return `${minutes} min ago`;
   const hours = Math.floor(minutes / 60);
   return `${hours} hr${hours === 1 ? '' : 's'} ago`;
-}
-
-function normalizeEvent(event: BackendEvent): DemoEvent {
-  const occurredAt = new Date(event.occurredAt);
-  return {
-    id: event.id,
-    deviceId: event.deviceId,
-    time: Number.isNaN(occurredAt.valueOf())
-      ? 'Time unavailable'
-      : occurredAt.toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-        }),
-    device: event.deviceName,
-    type: event.type
-      .split('-')
-      .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
-      .join(' '),
-    detail: event.detail,
-    tone: event.tone,
-  };
 }

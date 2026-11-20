@@ -95,6 +95,15 @@ export interface PowerEvent {
   newState: string | null;
 }
 
+export type ShutdownCoordination = 'unverified' | 'verified' | 'not_configured';
+
+export interface ShutdownReadinessPlan {
+  deviceId: string;
+  dependentSystems: string[];
+  coordination: ShutdownCoordination;
+  updatedAt: string | null;
+}
+
 export const DEMO_SCENARIOS: ReadonlyArray<{ id: DemoScenario; label: string }> = [
   { id: 'online', label: 'Online · grid' },
   { id: 'charging', label: 'Charging · utility' },

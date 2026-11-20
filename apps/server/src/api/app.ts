@@ -19,6 +19,8 @@ import {
   type HistoryMetric,
   type HistoryRange,
   type OutageRange,
+  type ShutdownCoordination,
+  type ShutdownReadinessPlan,
 } from '../domain/models.js';
 import { Store } from '../storage/store.js';
 import { AuthManager } from '../auth/auth-manager.js';
@@ -46,6 +48,8 @@ export interface ApiDependencies {
   authManager?: AuthManager;
   alertService?: AlertService;
 }
+
+const SHUTDOWN_READINESS_KEY_PREFIX = 'shutdown-readiness:';
 
 export function createApp({
   config,
@@ -188,6 +192,24 @@ export function createApp({
       ...(cursorId !== undefined ? { cursorId } : {}),
     });
     response.json(page);
+  });
+
+  app.get('/api/shutdown-readiness', (_request, response) => {
+    const plans = store.listDevices().map((device) => readShutdownPlan(store, device.id));
+    response.json({ data: plans });
+  });
+
+  app.put('/api/shutdown-readiness/:deviceId', (request, response) => {
+    const deviceId = request.params['deviceId'] ?? '';
+    if (!store.getDevice(deviceId)) throw new ApiError(404, 'not_found', 'UPS device not found');
+    const input = parseShutdownPlanInput(request.body);
+    const plan: ShutdownReadinessPlan = {
+      deviceId,
+      ...input,
+      updatedAt: new Date().toISOString(),
+    };
+    store.setAppSetting(`${SHUTDOWN_READINESS_KEY_PREFIX}${deviceId}`, JSON.stringify(plan));
+    response.json({ data: plan });
   });
 
   app.post('/api/demo/scenario', (request, response) => {
@@ -368,6 +390,76 @@ function parseNutHostInput(value: unknown): NutHostInput {
     ...(password ? { password } : {}),
     clearCredentials,
   };
+}
+
+function parseShutdownPlanInput(
+  value: unknown,
+): Omit<ShutdownReadinessPlan, 'deviceId' | 'updatedAt'> {
+  if (!isRecord(value) || !Array.isArray(value['dependentSystems'])) {
+    throw new ApiError(400, 'validation_error', 'A list of dependent systems is required');
+  }
+  if (value['dependentSystems'].length > 25) {
+    throw new ApiError(400, 'validation_error', 'List no more than 25 dependent systems');
+  }
+
+  const dependentSystems: string[] = [];
+  const seen = new Set<string>();
+  for (const item of value['dependentSystems']) {
+    if (typeof item !== 'string') {
+      throw new ApiError(400, 'validation_error', 'Dependent system names must be text');
+    }
+    const name = item.trim();
+    if (!name || name.length > 100) {
+      throw new ApiError(
+        400,
+        'validation_error',
+        'Dependent system names must contain 1 to 100 characters',
+      );
+    }
+    const key = name.toLowerCase();
+    if (!seen.has(key)) {
+      dependentSystems.push(name);
+      seen.add(key);
+    }
+  }
+
+  const coordination = value['coordination'];
+  if (
+    coordination !== 'unverified' &&
+    coordination !== 'verified' &&
+    coordination !== 'not_configured'
+  ) {
+    throw new ApiError(400, 'validation_error', 'Choose a valid shutdown coordination status');
+  }
+
+  return { dependentSystems, coordination: coordination as ShutdownCoordination };
+}
+
+function readShutdownPlan(store: Store, deviceId: string): ShutdownReadinessPlan {
+  const raw = store.getAppSetting(`${SHUTDOWN_READINESS_KEY_PREFIX}${deviceId}`);
+  if (!raw) {
+    return { deviceId, dependentSystems: [], coordination: 'unverified', updatedAt: null };
+  }
+
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    throw new ApiError(500, 'settings_error', 'Shutdown readiness settings could not be read');
+  }
+  if (
+    !isRecord(value) ||
+    value['deviceId'] !== deviceId ||
+    !Array.isArray(value['dependentSystems']) ||
+    !value['dependentSystems'].every((item) => typeof item === 'string') ||
+    (value['coordination'] !== 'unverified' &&
+      value['coordination'] !== 'verified' &&
+      value['coordination'] !== 'not_configured') ||
+    (value['updatedAt'] !== null && typeof value['updatedAt'] !== 'string')
+  ) {
+    throw new ApiError(500, 'settings_error', 'Shutdown readiness settings could not be read');
+  }
+  return value as unknown as ShutdownReadinessPlan;
 }
 
 function isValidHost(host: string): boolean {

@@ -1,6 +1,6 @@
 import { Injectable, computed, signal } from '@angular/core';
 import { DEMO_DEVICES, DemoScenario, getDemoEvents, getDemoSnapshot } from './demo-data';
-import type { DemoDevice, DemoEvent, UpsSnapshot } from './demo-data';
+import type { DemoDevice, UpsSnapshot } from './demo-data';
 
 export type BackendMode = 'demo' | 'nut' | 'multi' | 'none' | null;
 
@@ -54,7 +54,6 @@ export class DemoState {
   readonly sourceHealth = signal<SourceDiagnostic[]>([]);
   readonly selectedDeviceId = signal(DEMO_DEVICES[0].id);
   private readonly remoteSnapshots = signal<Record<string, UpsSnapshot>>({});
-  private readonly remoteEvents = signal<DemoEvent[]>([]);
   readonly isDemo = computed(() => this.backendMode() === null || this.backendMode() === 'demo');
   readonly selectedDevice = computed(
     () =>
@@ -62,21 +61,8 @@ export class DemoState {
       this.devices()[0] ??
       DEMO_DEVICES[0],
   );
-  readonly snapshot = computed(() => {
-    const snapshot = this.remoteSnapshots()[this.selectedDeviceId()];
-    if (snapshot) return snapshot;
-    if (this.backendMode() && this.backendMode() !== 'demo') {
-      return unavailableSnapshot(this.selectedDevice());
-    }
-    return getDemoSnapshot(this.scenario(), this.selectedDeviceId());
-  });
-  readonly events = computed(() =>
-    this.backendMode() === 'demo' || this.backendMode() === null
-      ? getDemoEvents(this.scenario(), this.selectedDevice().name)
-      : this.remoteEvents().filter(
-          (event) => !event.deviceId || event.deviceId === this.selectedDeviceId(),
-        ),
-  );
+  readonly snapshot = computed(() => this.snapshotFor(this.selectedDeviceId()));
+  readonly events = computed(() => getDemoEvents(this.scenario(), this.selectedDevice().name));
   readonly statusText = computed(() => {
     if (this.backendMode() === 'none') return 'No source configured';
     if (
@@ -125,6 +111,16 @@ export class DemoState {
     }
   }
 
+  snapshotFor(deviceId: string): UpsSnapshot {
+    const snapshot = this.remoteSnapshots()[deviceId];
+    if (snapshot) return snapshot;
+    if (this.backendMode() && this.backendMode() !== 'demo') {
+      const device = this.devices().find((item) => item.id === deviceId) ?? this.selectedDevice();
+      return unavailableSnapshot(device);
+    }
+    return getDemoSnapshot(this.scenario(), deviceId);
+  }
+
   setApiConnected(connected: boolean): void {
     this.apiConnected.set(connected);
   }
@@ -171,7 +167,6 @@ export class DemoState {
       this.selectedDeviceId.set(devices[0].id);
     }
     if (scenario) this.setScenarioFromBackend(scenario);
-    if (mode === 'demo' || mode === 'none') this.remoteEvents.set([]);
   }
 
   setBackendHealth(mode: Exclude<BackendMode, null>, sourceHealth: SourceDiagnostic[]): void {
@@ -194,10 +189,6 @@ export class DemoState {
 
   setBackendSnapshot(snapshot: UpsSnapshot): void {
     this.remoteSnapshots.update((current) => ({ ...current, [snapshot.deviceId]: snapshot }));
-  }
-
-  setBackendEvents(events: DemoEvent[]): void {
-    this.remoteEvents.set(events);
   }
 
   setScenarioFromBackend(value: string): void {
