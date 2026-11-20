@@ -2,6 +2,10 @@
 
 Volt is a read-only UPS dashboard using Network UPS Tools (NUT). It has an Angular 22 frontend and a Node.js, TypeScript and Express backend. Demo mode starts without hardware; NUT hosts can be managed in Settings.
 
+
+![image](./public/assets/screen.png)
+
+
 ## Run Volt locally
 
 Requirements: Node.js 24.15 or newer and pnpm 12.18.0. Start the backend and frontend in separate terminals:

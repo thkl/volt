@@ -1,4 +1,4 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
 import { DemoEvent, DemoScenario, UpsSnapshot } from './demo-data';
 import { BackendHost, BackendMode, DemoState, SourceDiagnostic } from './demo-state';
 
@@ -59,10 +59,19 @@ export interface BackendHistoryPoint {
 }
 
 export interface BackendHistory {
+  deviceId: string;
+  range: '1h' | '24h' | '7d' | '30d';
   from: string;
   to: string;
   bucketMs: number;
   series: Partial<Record<'realPower' | 'loadPercent' | 'inputVoltage', BackendHistoryPoint[]>>;
+}
+
+export interface BackendHistoryReading {
+  observedAt: string;
+  realPower: number | null;
+  loadPercent: number | null;
+  inputVoltage: number | null;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -72,6 +81,11 @@ export class LiveUpdates {
   private reconnectTimer: number | undefined;
   private reconnectAttempts = 0;
   private stopped = false;
+  private readonly latestHistoryReadings = signal<Record<string, BackendHistoryReading>>({});
+
+  getLatestHistoryReading(deviceId: string): BackendHistoryReading | null {
+    return this.latestHistoryReadings()[deviceId] ?? null;
+  }
 
   connect(): void {
     if (this.stopped || typeof WebSocket === 'undefined') return;
@@ -182,8 +196,12 @@ export class LiveUpdates {
         normalizeSourceHealth(message['sources']),
         scenario,
       );
+      this.retainHistoryReadings(devices);
       for (const device of devices) {
-        if (device.snapshot) this.state.setBackendSnapshot(normalizeSnapshot(device.snapshot));
+        if (device.snapshot) {
+          this.state.setBackendSnapshot(normalizeSnapshot(device.snapshot));
+          this.recordHistoryReading(device.snapshot);
+        }
       }
       if (mode !== 'demo' && mode !== 'none') void this.refreshEvents();
       return;
@@ -207,8 +225,12 @@ export class LiveUpdates {
         normalizeSourceHealth(message['sources']),
         typeof message['scenario'] === 'string' ? message['scenario'] : null,
       );
+      this.retainHistoryReadings(devices);
       for (const device of devices) {
-        if (device.snapshot) this.state.setBackendSnapshot(normalizeSnapshot(device.snapshot));
+        if (device.snapshot) {
+          this.state.setBackendSnapshot(normalizeSnapshot(device.snapshot));
+          this.recordHistoryReading(device.snapshot);
+        }
       }
       if (mode !== 'demo' && mode !== 'none') void this.refreshEvents();
       return;
@@ -221,6 +243,7 @@ export class LiveUpdates {
       const snapshot = message['data'] as BackendSnapshot | undefined;
       if (!snapshot || typeof snapshot.deviceId !== 'string') return;
       this.state.setBackendSnapshot(normalizeSnapshot(snapshot));
+      this.recordHistoryReading(snapshot);
       const device = message['device'] as BackendDevice | null | undefined;
       if (device) {
         this.state.setBackendDevice({
@@ -264,6 +287,26 @@ export class LiveUpdates {
     } catch {
       // The live snapshot stream remains useful while an event refresh is retried later.
     }
+  }
+
+  private retainHistoryReadings(devices: BackendDevice[]): void {
+    const activeDeviceIds = new Set(devices.map((device) => device.id));
+    this.latestHistoryReadings.update((current) =>
+      Object.fromEntries(Object.entries(current).filter(([id]) => activeDeviceIds.has(id))),
+    );
+  }
+
+  private recordHistoryReading(snapshot: BackendSnapshot): void {
+    if (snapshot.freshness !== 'fresh' || !Number.isFinite(Date.parse(snapshot.observedAt))) return;
+    this.latestHistoryReadings.update((current) => ({
+      ...current,
+      [snapshot.deviceId]: {
+        observedAt: snapshot.observedAt,
+        realPower: snapshot.realPower,
+        loadPercent: snapshot.loadPercent,
+        inputVoltage: snapshot.inputVoltage,
+      },
+    }));
   }
 
   private async mutateHost(

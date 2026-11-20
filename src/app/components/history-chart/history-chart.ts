@@ -1,6 +1,11 @@
-import { Component, computed, effect, inject, input, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { ChartRange, DemoScenario, UpsSnapshot } from '../../demo-data';
-import { BackendHistory, BackendHistoryPoint, LiveUpdates } from '../../live-updates';
+import {
+  BackendHistory,
+  BackendHistoryPoint,
+  BackendHistoryReading,
+  LiveUpdates,
+} from '../../live-updates';
 
 @Component({
   imports: [],
@@ -39,8 +44,23 @@ export class HistoryChart {
         return;
       }
       void this.liveUpdates.getHistory(deviceId, range).then((history) => {
-        if (request === this.historyRequest) this.liveHistory.set(history);
+        if (request === this.historyRequest) {
+          const latestReading = this.liveUpdates.getLatestHistoryReading(deviceId);
+          this.liveHistory.set(history ? mergeLiveReading(history, latestReading, range) : null);
+        }
       });
+    });
+
+    effect(() => {
+      const liveMode = this.liveMode();
+      const deviceId = this.deviceId();
+      const range = this.range();
+      const reading = this.liveUpdates.getLatestHistoryReading(deviceId);
+      if (!liveMode || !deviceId || !reading) return;
+
+      const history = untracked(() => this.liveHistory());
+      if (!history || history.deviceId !== deviceId || history.range !== range) return;
+      this.liveHistory.set(mergeLiveReading(history, reading, range));
     });
   }
 
@@ -222,6 +242,57 @@ function validHistoryPoints(points: BackendHistoryPoint[]): BackendHistoryPoint[
   return points.filter(
     (point) => Number.isFinite(Date.parse(point.observedAt)) && Number.isFinite(point.value),
   );
+}
+
+function mergeLiveReading(
+  history: BackendHistory,
+  reading: BackendHistoryReading | null,
+  range: ChartRange,
+): BackendHistory {
+  if (!reading) return history;
+  const observedAtMs = Date.parse(reading.observedAt);
+  if (!Number.isFinite(observedAtMs)) return history;
+
+  const historyEnd = Date.parse(history.to);
+  const latestTime = Math.max(
+    observedAtMs,
+    Number.isFinite(historyEnd) ? historyEnd : observedAtMs,
+  );
+  const from = latestTime - RANGE_DURATION_MS[range];
+  const oldestBucketToKeep = from - history.bucketMs;
+  const metrics = ['realPower', 'loadPercent', 'inputVoltage'] as const;
+  const series: BackendHistory['series'] = {};
+
+  for (const metric of metrics) {
+    const points = validHistoryPoints(history.series[metric] ?? []).filter(
+      (point) => Date.parse(point.observedAt) >= oldestBucketToKeep,
+    );
+    const value = reading[metric];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      const bucket = Math.floor(observedAtMs / history.bucketMs);
+      const existingIndex = points.findIndex(
+        (point) => Math.floor(Date.parse(point.observedAt) / history.bucketMs) === bucket,
+      );
+      const existing = existingIndex < 0 ? null : points[existingIndex];
+      const point: BackendHistoryPoint = {
+        observedAt: reading.observedAt,
+        value,
+        minimum: existing ? Math.min(existing.minimum, value) : value,
+        maximum: existing ? Math.max(existing.maximum, value) : value,
+      };
+      if (existingIndex < 0) points.push(point);
+      else points[existingIndex] = point;
+      points.sort((left, right) => Date.parse(left.observedAt) - Date.parse(right.observedAt));
+    }
+    series[metric] = points;
+  }
+
+  return {
+    ...history,
+    from: new Date(from).toISOString(),
+    to: new Date(latestTime).toISOString(),
+    series,
+  };
 }
 
 function timedValues(points: BackendHistoryPoint[]): TimedValue[] {
