@@ -346,11 +346,11 @@
       @if (alertLoading()) {
         <p class="form-hint" role="status">Loading alert settings…</p>
       } @else if (alertSettings()) {
-        <form class="alert-form" (ngSubmit)="saveAlertSettings()">
-          <div class="alert-subsection">
+        <form (ngSubmit)="saveAlertSettings()">
+          <div class="host-form">
             <h4>Notify me when</h4>
-            <div class="alert-rules">
-              <label class="alert-toggle">
+            <div class="host-form-grid">
+              <label class="tls-field">
                 <input
                   [(ngModel)]="alertForm.rules.onBattery"
                   name="alertOnBattery"
@@ -358,7 +358,7 @@
                 />
                 <span>UPS switches to battery power</span>
               </label>
-              <label class="alert-toggle">
+              <label class="tls-field">
                 <input
                   [(ngModel)]="alertForm.rules.powerRestored"
                   name="alertPowerRestored"
@@ -366,7 +366,7 @@
                 />
                 <span>Utility power is restored</span>
               </label>
-              <label class="alert-toggle">
+              <label class="tls-field">
                 <input
                   [(ngModel)]="alertForm.rules.lowBattery"
                   name="alertLowBattery"
@@ -374,7 +374,7 @@
                 />
                 <span>UPS reports low battery</span>
               </label>
-              <label class="alert-toggle">
+              <label class="tls-field">
                 <input
                   [(ngModel)]="alertForm.rules.lowBatteryRestored"
                   name="alertLowBatteryRestored"
@@ -382,7 +382,7 @@
                 />
                 <span>Low-battery warning clears</span>
               </label>
-              <label class="alert-toggle">
+              <label class="tls-field">
                 <input
                   [(ngModel)]="alertForm.rules.connectionLost"
                   name="alertConnectionLost"
@@ -390,7 +390,7 @@
                 />
                 <span>UPS connection is lost</span>
               </label>
-              <label class="alert-toggle">
+              <label class="tls-field">
                 <input
                   [(ngModel)]="alertForm.rules.connectionRestored"
                   name="alertConnectionRestored"
@@ -399,8 +399,8 @@
                 <span>UPS connection is restored</span>
               </label>
             </div>
-            <div class="runtime-alert-row">
-              <label class="alert-toggle">
+            <div class="host-form-grid runtime-alert-row">
+              <label class="tls-field">
                 <input
                   [(ngModel)]="alertForm.rules.lowRuntime"
                   name="alertLowRuntime"
@@ -422,14 +422,14 @@
             </div>
           </div>
 
-          <div class="alert-subsection">
-            <div class="alert-provider-heading">
+          <div class="host-form">
+            <div class="host-item">
               <h4>Pushover</h4>
               @if (alertSettings()!.pushover.configured) {
-                <span class="configured-tag">Credentials saved</span>
+                <span class="source-tag">Credentials saved</span>
               }
             </div>
-            <label class="alert-toggle provider-toggle">
+            <label class="tls-field">
               <input
                 [(ngModel)]="alertForm.pushover.enabled"
                 name="pushoverEnabled"
@@ -477,7 +477,7 @@
                 <span>Remove saved Pushover credentials</span>
               </label>
             }
-            <div class="alert-provider-actions">
+            <div class="host-form-actions">
               <button
                 class="small-button"
                 type="button"
@@ -489,14 +489,14 @@
             </div>
           </div>
 
-          <div class="alert-subsection">
-            <div class="alert-provider-heading">
+          <div class="host-form">
+            <div class="host-item">
               <h4>Email</h4>
               @if (alertSettings()!.email.configured) {
-                <span class="configured-tag">SMTP configured</span>
+                <span class="source-tag">SMTP configured</span>
               }
             </div>
-            <label class="alert-toggle provider-toggle">
+            <label class="tls-field">
               <input [(ngModel)]="alertForm.email.enabled" name="emailEnabled" type="checkbox" />
               <span>Send alerts by email</span>
             </label>
@@ -597,7 +597,7 @@
               SMTP passwords and Pushover credentials are encrypted in Volt’s database. SMTP
               authentication uses TLS when available; authenticated connections require TLS.
             </p>
-            <div class="alert-provider-actions">
+            <div class="host-form-actions">
               <button
                 class="small-button"
                 type="button"
@@ -613,7 +613,7 @@
             <p class="form-error" role="alert">{{ alertError() }}</p>
           }
           @if (alertNotice()) {
-            <p class="form-success" role="status">{{ alertNotice() }}</p>
+            <p class="form-hint" role="status">{{ alertNotice() }}</p>
           }
           <div class="host-form-actions">
             <button class="primary-button" type="submit" [disabled]="alertSaving()">

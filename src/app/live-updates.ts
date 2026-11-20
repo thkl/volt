@@ -218,10 +218,10 @@ export class LiveUpdates {
     const response = await fetch('/api/alerts/settings');
     const payload: unknown = await response.json().catch(() => null);
     if (!response.ok) throw new Error(responseError(payload, 'Alert settings could not be loaded'));
-    if (!isRecord(payload) || !isRecord(payload['data'])) {
+    if (!isRecord(payload) || !isAlertSettings(payload['data'])) {
       throw new Error('The server returned invalid alert settings');
     }
-    return payload['data'] as AlertSettings;
+    return payload['data'];
   }
 
   async saveAlertSettings(settings: AlertSettingsForm): Promise<AlertSettings> {
@@ -232,10 +232,10 @@ export class LiveUpdates {
     });
     const payload: unknown = await response.json().catch(() => null);
     if (!response.ok) throw new Error(responseError(payload, 'Alert settings could not be saved'));
-    if (!isRecord(payload) || !isRecord(payload['data'])) {
+    if (!isRecord(payload) || !isAlertSettings(payload['data'])) {
       throw new Error('The server returned invalid alert settings');
     }
-    return payload['data'] as AlertSettings;
+    return payload['data'];
   }
 
   async sendAlertTest(channel: 'pushover' | 'email'): Promise<void> {
@@ -445,6 +445,36 @@ function responseError(payload: unknown, fallback: string): string {
     typeof payload['error']['message'] === 'string'
     ? payload['error']['message']
     : fallback;
+}
+
+function isAlertSettings(value: unknown): value is AlertSettings {
+  if (!isRecord(value)) return false;
+  const rules = value['rules'];
+  const pushover = value['pushover'];
+  const email = value['email'];
+  if (!isRecord(rules) || !isRecord(pushover) || !isRecord(email)) return false;
+
+  return (
+    typeof rules['onBattery'] === 'boolean' &&
+    typeof rules['powerRestored'] === 'boolean' &&
+    typeof rules['lowBattery'] === 'boolean' &&
+    typeof rules['lowBatteryRestored'] === 'boolean' &&
+    typeof rules['lowRuntime'] === 'boolean' &&
+    typeof rules['runtimeThresholdMinutes'] === 'number' &&
+    typeof rules['connectionLost'] === 'boolean' &&
+    typeof rules['connectionRestored'] === 'boolean' &&
+    typeof pushover['enabled'] === 'boolean' &&
+    typeof pushover['configured'] === 'boolean' &&
+    typeof email['enabled'] === 'boolean' &&
+    typeof email['host'] === 'string' &&
+    typeof email['port'] === 'number' &&
+    typeof email['secure'] === 'boolean' &&
+    typeof email['from'] === 'string' &&
+    typeof email['to'] === 'string' &&
+    typeof email['configured'] === 'boolean' &&
+    typeof email['usernameConfigured'] === 'boolean' &&
+    typeof email['credentialsConfigured'] === 'boolean'
+  );
 }
 
 export interface NutHostForm {
