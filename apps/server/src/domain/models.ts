@@ -108,6 +108,9 @@ export const DEMO_SCENARIOS: ReadonlyArray<{ id: DemoScenario; label: string }> 
 export const HISTORY_RANGES = ['1h', '24h', '7d', '30d'] as const;
 export type HistoryRange = (typeof HISTORY_RANGES)[number];
 
+export const OUTAGE_RANGES = ['24h', '7d', '30d', '90d'] as const;
+export type OutageRange = (typeof OUTAGE_RANGES)[number];
+
 export const HISTORY_METRICS = [
   'realPower',
   'loadPercent',

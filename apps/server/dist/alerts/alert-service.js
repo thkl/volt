@@ -39,6 +39,7 @@ export class AlertService {
     preferences;
     secrets;
     runtimeBelowThreshold = new Map();
+    startupDeviceIds;
     onSnapshot = (snapshot, events, hostId) => this.handleSnapshot(snapshot, events, hostId);
     constructor(store, credentialKey, collector) {
         this.store = store;
@@ -49,6 +50,7 @@ export class AlertService {
         this.secrets = persisted.encryptedSecrets
             ? { ...EMPTY_SECRETS, ...decryptCredentials(persisted.encryptedSecrets, credentialKey) }
             : { ...EMPTY_SECRETS };
+        this.startupDeviceIds = new Set(store.listDevices().map((device) => device.id));
         collector.on('snapshot', this.onSnapshot);
     }
     close() {
@@ -162,9 +164,12 @@ export class AlertService {
     handleSnapshot(snapshot, events, hostId) {
         if (hostId === 'demo')
             return;
+        const firstFreshSnapshot = snapshot.freshness === 'fresh' && this.startupDeviceIds.delete(snapshot.deviceId);
         const rules = this.preferences.rules;
         const notifications = new Map();
         for (const event of events) {
+            if (firstFreshSnapshot && event.type === 'connection-restored')
+                continue;
             const title = eventTitle(event.type, rules);
             if (title)
                 notifications.set(title, `${snapshot.deviceName}: ${event.detail}`);

@@ -5,7 +5,7 @@ export type FlowState = 'online' | 'battery' | 'stale' | 'unknown';
 
 export type ChartRange = '1h' | '24h' | '7d' | '30d';
 
-export type DashboardView = 'overview' | 'history' | 'events';
+export type DashboardView = 'overview' | 'battery' | 'history' | 'outages' | 'events';
 
 export interface DemoDevice {
   id: string;

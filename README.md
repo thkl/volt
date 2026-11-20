@@ -23,6 +23,8 @@ Open Settings to add, edit or remove NUT hosts and configure alerts. Each host h
 
 The API exposes host management, collector types, device snapshots, bounded history, paginated events, alert settings and test delivery, and `WebSocket /api/ws`. `GET /api/health` reports per-source diagnostics; `GET /api/hosts/:id/health` returns one host's connection phase, discovered UPS names, last poll and error code. The UI distinguishes devices by host and updates as collectors discover or lose UPS devices. NUT and demo collectors are implemented; MQTT, Home Assistant and UniFi UPS HTTP are listed as future source types. Adding the first NUT host replaces the demo source. The demo state selector controls the backend simulator while it is connected, and continues using local fixtures if the server is unavailable.
 
+`GET /api/devices/:id/outages?range=30d` summarizes battery-power episodes over 24 hours, 7, 30 or 90 days. Confirmed duration totals omit active and uncertain episodes.
+
 ## Optional sign-in
 
 Authentication is disabled when the auth environment variables are empty. For password sign-in, set `AUTH_EMAIL` and `AUTH_PASSWORD`. For OIDC, set `AUTH_EMAIL`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` and `OIDC_REDIRECT_URI`; register that exact redirect URI with the identity provider. The OIDC account must return a verified email matching `AUTH_EMAIL` (case-insensitive). OIDC ID tokens signed with RS256 are supported. Set `OIDC_CLIENT_AUTH_METHOD=client_secret_post` if the identity provider requires credentials in the token request body; it defaults to `client_secret_basic`.
@@ -51,6 +53,7 @@ The container runs as a non-root user with a read-only root filesystem and write
 - **Overview** — reported power-flow illustration, battery charge and runtime, history preview, electrical readings and read-only sample variables.
 - **Battery health** — UPS-reported battery status, self-test results, service dates and available battery details. No health percentage is inferred from charge or runtime.
 - **History** — power draw or load percentage and input voltage across 1-hour, 24-hour, 7-day and 30-day ranges.
+- **Outages** — on-battery episodes, confirmed duration totals and incomplete intervals across 24-hour to 90-day ranges.
 - **Events** — fixture examples of power-source, battery and connectivity transitions.
 
 The demo badge appears when the simulator is the active source. The grid, UPS and server rack use the images provided in `docs/`; SVG is used for the connecting lines and flow particles. Grid-to-UPS particles stop when the UPS is on battery. Motion is hidden when reduced motion is enabled.

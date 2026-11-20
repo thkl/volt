@@ -12,11 +12,13 @@ import type { AppConfig } from '../config.js';
 import {
   DEMO_SCENARIOS,
   DATA_SOURCE_TYPES,
+  OUTAGE_RANGES,
   type DataSourceTypeDescriptor,
   HISTORY_METRICS,
   HISTORY_RANGES,
   type HistoryMetric,
   type HistoryRange,
+  type OutageRange,
 } from '../domain/models.js';
 import { Store } from '../storage/store.js';
 import { AuthManager } from '../auth/auth-manager.js';
@@ -163,6 +165,13 @@ export function createApp({
     response.json({ data: store.getHistory(deviceId, range, metrics) });
   });
 
+  app.get('/api/devices/:id/outages', (request, response) => {
+    const deviceId = request.params['id'] ?? '';
+    if (!store.getDevice(deviceId)) throw new ApiError(404, 'not_found', 'Device not found');
+    const range = parseOutageRange(request.query['range']);
+    response.json({ data: store.getOutageSummary(deviceId, range) });
+  });
+
   app.get('/api/events', (request, response) => {
     const deviceId = queryString(request.query['device']);
     if (deviceId && !store.getDevice(deviceId)) {
@@ -249,6 +258,14 @@ function parseRange(value: unknown): HistoryRange {
     throw new ApiError(400, 'validation_error', 'Range must be one of 1h, 24h, 7d or 30d');
   }
   return range as HistoryRange;
+}
+
+function parseOutageRange(value: unknown): OutageRange {
+  const range = queryString(value) ?? '30d';
+  if (!OUTAGE_RANGES.some((candidate) => candidate === range)) {
+    throw new ApiError(400, 'validation_error', 'Outage range must be one of 24h, 7d, 30d or 90d');
+  }
+  return range as OutageRange;
 }
 
 function parseMetrics(value: unknown): HistoryMetric[] {

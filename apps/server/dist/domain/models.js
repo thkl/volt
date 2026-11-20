@@ -15,6 +15,7 @@ export const DEMO_SCENARIOS = [
     { id: 'missing-sensors', label: 'Missing sensors' },
 ];
 export const HISTORY_RANGES = ['1h', '24h', '7d', '30d'];
+export const OUTAGE_RANGES = ['24h', '7d', '30d', '90d'];
 export const HISTORY_METRICS = [
     'realPower',
     'loadPercent',

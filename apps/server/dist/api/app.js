@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import express from 'express';
 import { isIP } from 'node:net';
-import { DEMO_SCENARIOS, DATA_SOURCE_TYPES, HISTORY_METRICS, HISTORY_RANGES, } from '../domain/models.js';
+import { DEMO_SCENARIOS, DATA_SOURCE_TYPES, OUTAGE_RANGES, HISTORY_METRICS, HISTORY_RANGES, } from '../domain/models.js';
 import { AuthManager } from '../auth/auth-manager.js';
 import { AlertConfigurationError, AlertDeliveryError, } from '../alerts/alert-service.js';
 export class ApiError extends Error {
@@ -119,6 +119,13 @@ export function createApp({ config, store, collector, collectorTypes = [...DATA_
         const metrics = parseMetrics(request.query['metrics']);
         response.json({ data: store.getHistory(deviceId, range, metrics) });
     });
+    app.get('/api/devices/:id/outages', (request, response) => {
+        const deviceId = request.params['id'] ?? '';
+        if (!store.getDevice(deviceId))
+            throw new ApiError(404, 'not_found', 'Device not found');
+        const range = parseOutageRange(request.query['range']);
+        response.json({ data: store.getOutageSummary(deviceId, range) });
+    });
     app.get('/api/events', (request, response) => {
         const deviceId = queryString(request.query['device']);
         if (deviceId && !store.getDevice(deviceId)) {
@@ -198,6 +205,13 @@ function parseRange(value) {
     const range = queryString(value) ?? '24h';
     if (!HISTORY_RANGES.some((candidate) => candidate === range)) {
         throw new ApiError(400, 'validation_error', 'Range must be one of 1h, 24h, 7d or 30d');
+    }
+    return range;
+}
+function parseOutageRange(value) {
+    const range = queryString(value) ?? '30d';
+    if (!OUTAGE_RANGES.some((candidate) => candidate === range)) {
+        throw new ApiError(400, 'validation_error', 'Outage range must be one of 24h, 7d, 30d or 90d');
     }
     return range;
 }

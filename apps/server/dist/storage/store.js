@@ -7,6 +7,12 @@ const RANGE_MS = {
     '7d': 7 * 24 * 60 * 60_000,
     '30d': 30 * 24 * 60 * 60_000,
 };
+const OUTAGE_RANGE_MS = {
+    '24h': 24 * 60 * 60_000,
+    '7d': 7 * 24 * 60 * 60_000,
+    '30d': 30 * 24 * 60 * 60_000,
+    '90d': 90 * 24 * 60 * 60_000,
+};
 const METRIC_COLUMNS = {
     realPower: 'real_power',
     loadPercent: 'load_percent',
@@ -283,6 +289,152 @@ export class Store {
         return {
             data,
             nextCursor: hasMore && last ? Buffer.from(String(last.id)).toString('base64url') : null,
+        };
+    }
+    getOutageSummary(deviceId, range, now = Date.now()) {
+        const fromMs = now - OUTAGE_RANGE_MS[range];
+        const previousPowerEvent = this.database
+            .prepare(`SELECT events.*, devices.ups_name AS device_name
+         FROM events JOIN devices ON devices.id = events.device_id
+         WHERE events.device_id = ? AND events.occurred_at_ms < ?
+           AND events.type IN ('on-battery', 'mains-restored')
+         ORDER BY events.occurred_at_ms DESC, events.id DESC
+         LIMIT 1`)
+            .get(deviceId, fromMs);
+        const scanFromMs = previousPowerEvent?.type === 'on-battery' ? previousPowerEvent.occurred_at_ms : fromMs;
+        const rows = this.database
+            .prepare(`SELECT events.*, devices.ups_name AS device_name
+         FROM events JOIN devices ON devices.id = events.device_id
+         WHERE events.device_id = ? AND events.occurred_at_ms >= ?
+           AND events.type IN ('on-battery', 'mains-restored', 'connection-lost')
+         ORDER BY events.occurred_at_ms ASC, events.id ASC`)
+            .all(deviceId, scanFromMs);
+        const episodes = [];
+        let open = null;
+        for (const row of rows) {
+            const occurredAtMs = Date.parse(row.occurred_at);
+            if (row.type === 'on-battery') {
+                if (open) {
+                    episodes.push({
+                        id: open.id,
+                        startedAt: open.startedAt,
+                        endedAt: null,
+                        durationMs: null,
+                        status: 'uncertain',
+                        uncertainty: 'missing-return',
+                        startMs: open.startMs,
+                        endMs: occurredAtMs,
+                    });
+                }
+                open = {
+                    id: row.id,
+                    startedAt: row.occurred_at,
+                    startMs: occurredAtMs,
+                    observationGap: false,
+                };
+            }
+            else if (row.type === 'connection-lost' && open) {
+                open.observationGap = true;
+            }
+            else if (row.type === 'mains-restored' && open) {
+                const durationMs = Math.max(0, occurredAtMs - open.startMs);
+                episodes.push({
+                    id: open.id,
+                    startedAt: open.startedAt,
+                    endedAt: row.occurred_at,
+                    durationMs,
+                    status: open.observationGap ? 'uncertain' : 'completed',
+                    uncertainty: open.observationGap ? 'connection-gap' : null,
+                    startMs: open.startMs,
+                    endMs: occurredAtMs,
+                });
+                open = null;
+            }
+            else if (row.type === 'mains-restored') {
+                episodes.push({
+                    id: row.id,
+                    startedAt: null,
+                    endedAt: row.occurred_at,
+                    durationMs: null,
+                    status: 'uncertain',
+                    uncertainty: 'missing-start',
+                    startMs: null,
+                    endMs: occurredAtMs,
+                });
+            }
+        }
+        const device = this.getDevice(deviceId);
+        const confirmedBattery = device?.snapshot?.freshness === 'fresh' && device.snapshot.flow === 'battery';
+        const confirmedOnline = device?.snapshot?.freshness === 'fresh' && device.snapshot.flow === 'online';
+        if (open) {
+            if (confirmedOnline && device?.snapshot) {
+                const endedAtMs = Date.parse(device.snapshot.observedAt);
+                episodes.push({
+                    id: open.id,
+                    startedAt: open.startedAt,
+                    endedAt: device.snapshot.observedAt,
+                    durationMs: null,
+                    status: 'uncertain',
+                    uncertainty: open.observationGap ? 'connection-gap' : 'missing-return',
+                    startMs: open.startMs,
+                    endMs: Number.isFinite(endedAtMs) ? endedAtMs : null,
+                });
+            }
+            else {
+                const durationMs = confirmedBattery && !open.observationGap ? Math.max(0, now - open.startMs) : null;
+                episodes.push({
+                    id: open.id,
+                    startedAt: open.startedAt,
+                    endedAt: null,
+                    durationMs,
+                    status: confirmedBattery ? 'ongoing' : 'uncertain',
+                    uncertainty: open.observationGap
+                        ? 'connection-gap'
+                        : confirmedBattery
+                            ? null
+                            : 'missing-return',
+                    startMs: open.startMs,
+                    endMs: null,
+                });
+            }
+        }
+        else if (confirmedBattery) {
+            episodes.push({
+                id: null,
+                startedAt: null,
+                endedAt: null,
+                durationMs: null,
+                status: 'ongoing',
+                uncertainty: 'missing-start',
+                startMs: null,
+                endMs: null,
+            });
+        }
+        const overlapping = episodes
+            .filter((episode) => episode.endMs === null || episode.endMs >= fromMs)
+            .sort((first, second) => (second.startMs ?? -1) - (first.startMs ?? -1));
+        const confirmed = overlapping.filter((episode) => episode.status === 'completed' &&
+            episode.uncertainty === null &&
+            episode.startMs !== null &&
+            episode.endMs !== null);
+        const confirmedDurations = confirmed.map((episode) => Math.max(0, Math.min(episode.endMs, now) - Math.max(episode.startMs, fromMs)));
+        const confirmedDurationMs = confirmedDurations.reduce((total, duration) => total + duration, 0);
+        const longestConfirmedDurationMs = confirmedDurations.length
+            ? Math.max(...confirmedDurations)
+            : null;
+        return {
+            deviceId,
+            range,
+            from: new Date(fromMs).toISOString(),
+            to: new Date(now).toISOString(),
+            outageCount: overlapping.length,
+            completedCount: overlapping.filter((episode) => episode.status === 'completed').length,
+            uncertainCount: overlapping.filter((episode) => episode.status === 'uncertain' || episode.uncertainty !== null).length,
+            confirmedDurationMs,
+            longestConfirmedDurationMs,
+            outages: overlapping
+                .slice(0, 100)
+                .map(({ startMs: _start, endMs: _end, ...episode }) => episode),
         };
     }
     deleteExpired(sampleCutoffMs, eventCutoffMs) {

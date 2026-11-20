@@ -1,0 +1,410 @@
+:host {
+  display: block;
+}
+
+.outages-page {
+  display: grid;
+  gap: 17px;
+}
+
+.page-heading {
+  display: flex;
+  min-height: 82px;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.eyebrow {
+  margin: 0 0 7px;
+  color: #7f8b8d;
+  font-size: 0.65rem;
+  font-weight: 720;
+  letter-spacing: 0.13em;
+}
+
+.page-heading h1 {
+  margin: 0;
+  color: #f4f6f5;
+  font-size: clamp(1.8rem, 3vw, 2.55rem);
+  font-weight: 620;
+  letter-spacing: -0.05em;
+  line-height: 1;
+}
+
+.page-subtitle {
+  margin: 8px 0 0;
+  color: #aeb7b9;
+  font-size: 0.94rem;
+}
+
+.demo-note {
+  display: inline-flex;
+  min-height: 31px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+  padding: 0 10px;
+  border: 1px solid #29405a;
+  border-radius: 7px;
+  background: rgb(47 102 156 / 11%);
+  color: #b6d5f2;
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.demo-note span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #55a9ff;
+}
+
+.active-outage,
+.outage-summary-panel,
+.outage-panel,
+.outage-empty {
+  border: 1px solid #2a3035;
+  border-radius: 13px;
+  background: #15181a;
+}
+
+.active-outage {
+  display: flex;
+  align-items: flex-start;
+  gap: 15px;
+  padding: 18px 21px;
+  border-color: #68512b;
+  background: #1c1912;
+}
+
+.active-indicator {
+  width: 11px;
+  height: 11px;
+  flex: none;
+  margin-top: 2px;
+  border-radius: 50%;
+  background: #f5a524;
+  box-shadow: 0 0 0 5px rgb(245 165 36 / 12%);
+}
+
+.active-outage .eyebrow {
+  color: #c3964a;
+}
+
+.active-outage h2 {
+  margin: 0;
+  color: #f1d39c;
+  font-size: 1.05rem;
+  font-weight: 630;
+}
+
+.active-outage p:last-child {
+  margin: 6px 0 0;
+  color: #b8a37d;
+  font-size: 0.77rem;
+  line-height: 1.45;
+}
+
+.summary-period,
+.outage-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #2a3035;
+}
+
+.summary-period h2,
+.outage-panel-heading h2 {
+  margin: 0;
+  color: #e9eeec;
+  font-size: 0.96rem;
+  font-weight: 620;
+}
+
+.summary-period .eyebrow {
+  margin-bottom: 4px;
+}
+
+.range-control {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid #333c40;
+  border-radius: 8px;
+  background: #111416;
+}
+
+.range-control button {
+  min-height: 29px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #9ca7a8;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.7rem;
+}
+
+.range-control button:hover {
+  color: #e6ece9;
+}
+
+.range-control button.range-active {
+  background: #293236;
+  color: #edf2ef;
+}
+
+.summary-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.summary-metric {
+  display: grid;
+  min-height: 117px;
+  align-content: center;
+  gap: 6px;
+  padding: 14px 20px;
+}
+
+.summary-metric + .summary-metric {
+  border-left: 1px solid #252b2e;
+}
+
+.summary-metric > span {
+  color: #939e9f;
+  font-size: 0.72rem;
+}
+
+.summary-metric strong {
+  color: #eef2f0;
+  font-size: 1.25rem;
+  font-weight: 630;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-metric small {
+  color: #748184;
+  font-size: 0.65rem;
+}
+
+.outage-panel {
+  overflow: hidden;
+}
+
+.outage-panel-heading h2 {
+  font-size: 0.95rem;
+}
+
+.outage-panel-heading p {
+  margin: 5px 0 0;
+  color: #8f9a9d;
+  font-size: 0.72rem;
+}
+
+.period-count {
+  color: #879294;
+  font-size: 0.68rem;
+}
+
+.outage-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.outage-row {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 13px;
+  min-height: 88px;
+  padding: 13px 20px;
+}
+
+.outage-row + .outage-row {
+  border-top: 1px solid #252b2e;
+}
+
+.outage-marker {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #7c9c88;
+  box-shadow: 0 0 0 4px rgb(124 156 136 / 10%);
+}
+
+.row-ongoing .outage-marker {
+  background: #f5a524;
+  box-shadow: 0 0 0 4px rgb(245 165 36 / 10%);
+}
+
+.row-uncertain .outage-marker {
+  background: #8f9a9d;
+  box-shadow: 0 0 0 4px rgb(143 154 157 / 10%);
+}
+
+.outage-copy {
+  min-width: 0;
+}
+
+.outage-title-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.outage-title-row h3 {
+  margin: 0;
+  color: #e5ebe8;
+  font-size: 0.83rem;
+  font-weight: 610;
+}
+
+.outage-status {
+  padding: 3px 7px;
+  border: 1px solid #35463b;
+  border-radius: 5px;
+  color: #9fcbac;
+  font-size: 0.61rem;
+  text-transform: capitalize;
+}
+
+.row-ongoing .outage-status {
+  border-color: #68512b;
+  color: #f0c87f;
+}
+
+.row-uncertain .outage-status {
+  border-color: #41494c;
+  color: #aeb8ba;
+}
+
+.outage-copy p {
+  margin: 5px 0 0;
+  color: #8f9a9d;
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.outage-copy small {
+  display: block;
+  margin-top: 4px;
+  color: #c2a66f;
+  font-size: 0.66rem;
+}
+
+.outage-duration {
+  color: #d9e0dd;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.outage-empty {
+  display: grid;
+  min-height: 210px;
+  align-content: center;
+  justify-items: center;
+  padding: 24px;
+  text-align: center;
+}
+
+.outage-empty h2,
+.outage-empty h3 {
+  margin: 0;
+  color: #e4eae7;
+  font-size: 0.96rem;
+  font-weight: 620;
+}
+
+.outage-empty p {
+  max-width: 490px;
+  margin: 7px 0 0;
+  color: #929d9f;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.compact-empty {
+  min-height: 170px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.outage-note {
+  margin: -1px 0 0;
+  color: #859193;
+  font-size: 0.72rem;
+  line-height: 1.55;
+}
+
+@media (max-width: 760px) {
+  .summary-period,
+  .outage-panel-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .summary-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .summary-metric {
+    min-height: 94px;
+  }
+
+  .summary-metric + .summary-metric {
+    border-top: 1px solid #252b2e;
+    border-left: 0;
+  }
+}
+
+@media (max-width: 600px) {
+  .outages-page {
+    gap: 12px;
+  }
+
+  .page-heading {
+    min-height: auto;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .page-heading h1 {
+    font-size: 1.85rem;
+  }
+
+  .page-subtitle {
+    margin-top: 6px;
+    font-size: 0.82rem;
+  }
+
+  .range-control {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .range-control button {
+    padding-inline: 7px;
+  }
+
+  .outage-row {
+    grid-template-columns: 10px minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px 14px;
+  }
+
+  .outage-duration {
+    grid-column: 2;
+    justify-self: start;
+    text-align: left;
+  }
+}

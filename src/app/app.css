@@ -718,8 +718,8 @@
   .primary-nav {
     grid-column: 1 / -1;
     grid-row: 2;
-    justify-content: space-between;
     gap: 4px;
+    overflow-x: auto;
     border-top: 1px solid #23292c;
     padding-top: 6px;
   }

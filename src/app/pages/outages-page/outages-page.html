@@ -1,0 +1,166 @@
+<div class="outages-page">
+  <header class="page-heading">
+    <div>
+      <p class="eyebrow">POWER EVENTS</p>
+      <h1>Outage summaries</h1>
+      <p class="page-subtitle">
+        {{ state.selectedDevice().name }} · {{ state.selectedDevice().model }}
+        @if (state.selectedDevice().hostName) {
+          · {{ state.selectedDevice().hostName }}
+        }
+      </p>
+    </div>
+    @if (state.isDemo()) {
+      <span class="demo-note"><span aria-hidden="true"></span> Demo outage history</span>
+    } @else {
+      <span class="demo-note"><span aria-hidden="true"></span> Recorded UPS transitions</span>
+    }
+  </header>
+
+  @if (state.backendMode() === 'none') {
+    <section class="outage-empty">
+      <h2>Connect a UPS to summarize outages</h2>
+      <p>Add a NUT host in Settings to record battery power transitions and their duration.</p>
+    </section>
+  } @else if (loading()) {
+    <section class="outage-empty" role="status">
+      <h2>Loading outage history</h2>
+      <p>Reading recorded power transitions for the selected UPS.</p>
+    </section>
+  } @else if (loadError()) {
+    <section class="outage-empty" role="status">
+      <h2>Outage history unavailable</h2>
+      <p>{{ loadError() }}</p>
+    </section>
+  } @else if (report(); as summary) {
+    @if (currentOutage(); as active) {
+      <section class="active-outage" aria-live="polite">
+        <span class="active-indicator" aria-hidden="true"></span>
+        <div>
+          <p class="eyebrow">CURRENT POWER STATE</p>
+          <h2>UPS is on battery</h2>
+          <p>
+            @if (active.startedAt && active.uncertainty === null) {
+              Since {{ formatTime(active.startedAt) }} ·
+              {{ episodeDuration(active) }}
+            } @else {
+              {{ uncertaintyText(active) }}
+            }
+          </p>
+        </div>
+      </section>
+    }
+
+    <section class="outage-summary-panel" aria-label="Outage summary period">
+      <div class="summary-period">
+        <div>
+          <p class="eyebrow">SUMMARY PERIOD</p>
+          <h2>{{ rangeLabel() }}</h2>
+        </div>
+        <div class="range-control" role="group" aria-label="Outage summary range">
+          @for (range of ranges; track range) {
+            <button
+              type="button"
+              [class.range-active]="selectedRange() === range"
+              [attr.aria-pressed]="selectedRange() === range"
+              (click)="selectRange(range)"
+            >
+              {{ range }}
+            </button>
+          }
+        </div>
+      </div>
+
+      <div class="summary-metrics">
+        <article class="summary-metric">
+          <span>Power interruptions</span>
+          <strong>{{ summary.outageCount }}</strong>
+          <small>{{ summary.completedCount }} completed</small>
+        </article>
+        <article class="summary-metric">
+          <span>Confirmed battery time</span>
+          <strong>{{ formatDuration(summary.confirmedDurationMs) }}</strong>
+          <small>Excludes active and uncertain periods</small>
+        </article>
+        <article class="summary-metric">
+          <span>Longest confirmed</span>
+          <strong>{{ formatDuration(summary.longestConfirmedDurationMs) }}</strong>
+          <small>
+            {{ summary.uncertainCount }} uncertain
+            {{ summary.uncertainCount === 1 ? 'period' : 'periods' }}
+          </small>
+        </article>
+      </div>
+    </section>
+
+    <section class="outage-panel" aria-labelledby="outage-list-title">
+      <div class="outage-panel-heading">
+        <div>
+          <h2 id="outage-list-title">Battery power periods</h2>
+          <p>
+            {{ summary.outageCount }}
+            {{ summary.outageCount === 1 ? 'period' : 'periods' }}
+            overlapping the last {{ rangeLabel() }} ·
+            {{ state.selectedDevice().name }}
+          </p>
+        </div>
+        <span class="period-count">Newest first</span>
+      </div>
+
+      @if (summary.outages.length > 0) {
+        <ol class="outage-list">
+          @for (episode of summary.outages; track episode.id ?? episode.startedAt ?? $index) {
+            <li
+              class="outage-row"
+              [class.row-ongoing]="episode.status === 'ongoing'"
+              [class.row-uncertain]="episode.status === 'uncertain'"
+            >
+              <span class="outage-marker" aria-hidden="true"></span>
+              <div class="outage-copy">
+                <div class="outage-title-row">
+                  <h3>
+                    {{
+                      episode.status === 'completed'
+                        ? 'Utility power restored'
+                        : episode.status === 'ongoing'
+                          ? 'On battery now'
+                          : episode.endedAt
+                            ? 'Utility restored · duration uncertain'
+                            : 'Return to utility not confirmed'
+                    }}
+                  </h3>
+                  <span class="outage-status">{{ episode.status }}</span>
+                </div>
+                <p>
+                  Started {{ formatTime(episode.startedAt) }}
+                  @if (episode.endedAt) {
+                    · returned {{ formatTime(episode.endedAt) }}
+                  } @else if (episode.status === 'ongoing') {
+                    · currently in progress
+                  } @else {
+                    · end time unavailable
+                  }
+                </p>
+                @if (episode.uncertainty) {
+                  <small>{{ uncertaintyText(episode) }}</small>
+                }
+              </div>
+              <strong class="outage-duration">{{ episodeDuration(episode) }}</strong>
+            </li>
+          }
+        </ol>
+      } @else {
+        <div class="outage-empty compact-empty">
+          <h3>No battery power periods recorded</h3>
+          <p>UPS power transitions will appear here when they occur.</p>
+        </div>
+      }
+    </section>
+
+    <p class="outage-note">
+      Summaries use periods when the UPS reported battery power. The report does not identify why
+      utility power was unavailable. Confirmed totals exclude active periods and episodes with
+      incomplete or interrupted observations.
+    </p>
+  }
+</div>

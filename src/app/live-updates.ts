@@ -1,6 +1,7 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { DemoEvent, DemoScenario, UpsSnapshot } from './demo-data';
 import { BackendHost, BackendMode, DemoState, SourceDiagnostic } from './demo-state';
+import type { OutageRange, OutageSummary } from './outage-models';
 
 interface BackendDevice {
   id: string;
@@ -123,6 +124,7 @@ export interface AlertSettingsForm {
 @Injectable({ providedIn: 'root' })
 export class LiveUpdates {
   private readonly state = inject(DemoState);
+  readonly outageRevision = signal(0);
   private socket: WebSocket | null = null;
   private reconnectTimer: number | undefined;
   private reconnectAttempts = 0;
@@ -208,6 +210,19 @@ export class LiveUpdates {
       );
       if (!response.ok) return null;
       const payload = (await response.json()) as { data?: BackendHistory };
+      return payload.data ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  async getOutageSummary(deviceId: string, range: OutageRange): Promise<OutageSummary | null> {
+    try {
+      const response = await fetch(
+        `/api/devices/${encodeURIComponent(deviceId)}/outages?range=${range}`,
+      );
+      if (!response.ok) return null;
+      const payload = (await response.json()) as { data?: OutageSummary };
       return payload.data ?? null;
     } catch {
       return null;
@@ -336,6 +351,18 @@ export class LiveUpdates {
         });
       }
       const events = message['events'];
+      if (
+        Array.isArray(events) &&
+        events.some(
+          (event) =>
+            isRecord(event) &&
+            ['on-battery', 'mains-restored', 'connection-lost', 'connection-restored'].includes(
+              String(event['type']),
+            ),
+        )
+      ) {
+        this.outageRevision.update((revision) => revision + 1);
+      }
       if (
         Array.isArray(events) &&
         events.length > 0 &&
