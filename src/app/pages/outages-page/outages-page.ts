@@ -31,6 +31,25 @@ export class OutagesPage {
   readonly loadError = signal<string | null>(null);
   readonly nowMs = signal(Date.now());
   readonly rangeLabel = computed(() => RANGE_LABELS[this.selectedRange()]);
+  readonly confirmedBatteryDurationMs = computed(() => {
+    const summary = this.report();
+    if (!summary) return 0;
+
+    const rangeStartMs = Date.parse(summary.from);
+    const reportedAtMs = Date.parse(summary.to);
+    const currentTimeMs = Math.max(this.nowMs(), reportedAtMs);
+    const elapsedSinceReport = summary.outages.reduce((total, episode) => {
+      if (episode.status !== 'ongoing' || episode.uncertainty !== null || !episode.startedAt) {
+        return total;
+      }
+      const periodStartMs = Math.max(Date.parse(episode.startedAt), rangeStartMs);
+      const durationAtReport = Math.max(0, reportedAtMs - periodStartMs);
+      const durationNow = Math.max(0, currentTimeMs - periodStartMs);
+      return total + Math.max(0, durationNow - durationAtReport);
+    }, 0);
+
+    return summary.confirmedDurationMs + elapsedSinceReport;
+  });
   readonly currentOutage = computed(
     () => this.report()?.outages.find((outage) => outage.status === 'ongoing') ?? null,
   );
@@ -83,6 +102,7 @@ export class OutagesPage {
   formatDuration(durationMs: number | null): string {
     if (durationMs === null) return 'Duration unavailable';
     const totalMinutes = Math.floor(durationMs / 60_000);
+    if (totalMinutes === 0 && durationMs <= 0) return '0 min';
     if (totalMinutes < 1) return 'Under a minute';
     const days = Math.floor(totalMinutes / (24 * 60));
     const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
@@ -181,8 +201,19 @@ function createDemoSummary(
     const end = episode.endedAt ? Date.parse(episode.endedAt) : now;
     return end >= fromMs;
   });
+  const confirmedDurations = outages.flatMap((episode) => {
+    if (
+      (episode.status !== 'completed' && episode.status !== 'ongoing') ||
+      episode.uncertainty !== null ||
+      !episode.startedAt
+    ) {
+      return [];
+    }
+    const startMs = Math.max(Date.parse(episode.startedAt), fromMs);
+    const endMs = Math.min(episode.endedAt ? Date.parse(episode.endedAt) : now, now);
+    return [Math.max(0, endMs - startMs)];
+  });
   const completed = outages.filter((episode) => episode.status === 'completed');
-  const confirmedDurations = completed.map((episode) => episode.durationMs ?? 0);
   return {
     deviceId,
     range,

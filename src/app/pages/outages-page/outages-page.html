@@ -78,9 +78,9 @@
           <small>{{ summary.completedCount }} completed</small>
         </article>
         <article class="summary-metric">
-          <span>Confirmed battery time</span>
-          <strong>{{ formatDuration(summary.confirmedDurationMs) }}</strong>
-          <small>Excludes active and uncertain periods</small>
+          <span>Time powered by battery</span>
+          <strong>{{ formatDuration(confirmedBatteryDurationMs()) }}</strong>
+          <small>Completed plus current confirmed time; excludes uncertain periods</small>
         </article>
         <article class="summary-metric">
           <span>Longest confirmed</span>
@@ -159,8 +159,9 @@
 
     <p class="outage-note">
       Summaries use periods when the UPS reported battery power. The report does not identify why
-      utility power was unavailable. Confirmed totals exclude active periods and episodes with
-      incomplete or interrupted observations.
+      utility power was unavailable. Confirmed totals include elapsed time in the current battery
+      period when its start is known. Episodes with incomplete or interrupted observations are
+      excluded from confirmed totals.
     </p>
   }
 </div>

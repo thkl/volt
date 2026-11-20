@@ -605,13 +605,12 @@ export class Store {
       .sort((first, second) => (second.startMs ?? -1) - (first.startMs ?? -1));
     const confirmed = overlapping.filter(
       (episode) =>
-        episode.status === 'completed' &&
+        (episode.status === 'completed' || episode.status === 'ongoing') &&
         episode.uncertainty === null &&
-        episode.startMs !== null &&
-        episode.endMs !== null,
+        episode.startMs !== null,
     );
     const confirmedDurations = confirmed.map((episode) =>
-      Math.max(0, Math.min(episode.endMs!, now) - Math.max(episode.startMs!, fromMs)),
+      Math.max(0, Math.min(episode.endMs ?? now, now) - Math.max(episode.startMs!, fromMs)),
     );
     const confirmedDurationMs = confirmedDurations.reduce((total, duration) => total + duration, 0);
     const longestConfirmedDurationMs = confirmedDurations.length
