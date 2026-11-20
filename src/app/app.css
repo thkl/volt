@@ -726,10 +726,11 @@
 
   .primary-nav a {
     min-height: 36px;
-    flex: 1;
+    flex: 0 0 auto;
     justify-content: center;
-    padding-inline: 8px;
-    font-size: 0.83rem;
+    padding-inline: 4px;
+    font-size: 0.74rem;
+    white-space: nowrap;
   }
 
   .topbar-controls {

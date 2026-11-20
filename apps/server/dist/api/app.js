@@ -4,6 +4,7 @@ import express from 'express';
 import { isIP } from 'node:net';
 import { DEMO_SCENARIOS, DATA_SOURCE_TYPES, HISTORY_METRICS, HISTORY_RANGES, } from '../domain/models.js';
 import { AuthManager } from '../auth/auth-manager.js';
+import { AlertConfigurationError, AlertDeliveryError, } from '../alerts/alert-service.js';
 export class ApiError extends Error {
     status;
     code;
@@ -13,7 +14,7 @@ export class ApiError extends Error {
         this.code = code;
     }
 }
-export function createApp({ config, store, collector, collectorTypes = [...DATA_SOURCE_TYPES], authManager = new AuthManager(config), }) {
+export function createApp({ config, store, collector, collectorTypes = [...DATA_SOURCE_TYPES], authManager = new AuthManager(config), alertService, }) {
     const app = express();
     app.disable('x-powered-by');
     app.use(noCache);
@@ -43,6 +44,36 @@ export function createApp({ config, store, collector, collectorTypes = [...DATA_
     });
     app.get('/api/collector-types', (_request, response) => {
         response.json({ data: collectorTypes });
+    });
+    app.get('/api/alerts/settings', (_request, response) => {
+        if (!alertService)
+            throw new ApiError(503, 'alerts_unavailable', 'Alert settings are unavailable');
+        response.json({ data: alertService.getSettings() });
+    });
+    app.put('/api/alerts/settings', (request, response) => {
+        if (!alertService)
+            throw new ApiError(503, 'alerts_unavailable', 'Alert settings are unavailable');
+        try {
+            response.json({ data: alertService.saveSettings(request.body) });
+        }
+        catch (error) {
+            throw alertConfigurationError(error);
+        }
+    });
+    app.post('/api/alerts/test', async (request, response) => {
+        if (!alertService)
+            throw new ApiError(503, 'alerts_unavailable', 'Alert settings are unavailable');
+        const channel = isRecord(request.body) ? request.body['channel'] : undefined;
+        if (channel !== 'pushover' && channel !== 'email') {
+            throw new ApiError(400, 'validation_error', 'Choose Pushover or email as the test channel');
+        }
+        try {
+            await alertService.sendTest(channel);
+            response.json({ data: { sent: true } });
+        }
+        catch (error) {
+            throw alertConfigurationError(error);
+        }
     });
     app.post('/api/hosts', (request, response) => {
         const host = parseNutHostInput(request.body);
@@ -273,6 +304,15 @@ function isRecord(value) {
 function hostMutationError(error) {
     const message = error instanceof Error ? error.message : 'Host settings could not be saved';
     return new ApiError(message.endsWith('not found') ? 404 : 400, 'host_error', message);
+}
+function alertConfigurationError(error) {
+    if (error instanceof AlertConfigurationError) {
+        return new ApiError(400, 'alert_configuration_error', error.message);
+    }
+    if (error instanceof AlertDeliveryError) {
+        return new ApiError(502, 'alert_delivery_failed', 'The test alert could not be delivered. Check the channel settings and server logs.');
+    }
+    return new ApiError(500, 'internal_error', 'Alert settings could not be saved');
 }
 const errorHandler = (error, _request, response, _next) => {
     if (error instanceof ApiError) {

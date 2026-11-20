@@ -16,6 +16,18 @@ export const DEMO_DEVICES = [
         powerOffset: -28,
     },
 ];
+const demoBatteryHealthVariables = {
+    'battery.status': 'ok',
+    'battery.date': '2025/08/01',
+    'battery.date.maintenance': '2027/08/01',
+    'battery.type': 'PbAc',
+    'battery.capacity': '7.2',
+    'battery.capacity.nominal': '7.2',
+    'battery.packs': '1',
+    'battery.packs.bad': '0',
+    'ups.test.result': 'Done and passed',
+    'ups.test.date': '2026/10/20',
+};
 const fixtures = {
     online: {
         flow: 'online',
@@ -209,7 +221,7 @@ export class DemoSource extends EventEmitter {
 export function demoSnapshot(scenario, device, now = Date.now()) {
     const fixture = structuredClone(fixtures[scenario]);
     const observedAt = scenario === 'stale' ? now - 14 * 60_000 : now;
-    const variables = { ...fixture.rawVariables };
+    const variables = { ...demoBatteryHealthVariables, ...fixture.rawVariables };
     const adjust = (value, delta) => value === null ? null : Math.round((value + delta) * 10) / 10;
     if (device.loadOffset !== 0 && fixture.loadPercent !== null) {
         fixture.loadPercent = adjust(fixture.loadPercent, device.loadOffset);

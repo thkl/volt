@@ -49,6 +49,7 @@ The container runs as a non-root user with a read-only root filesystem and write
 ## Screens
 
 - **Overview** — reported power-flow illustration, battery charge and runtime, history preview, electrical readings and read-only sample variables.
+- **Battery health** — UPS-reported battery status, self-test results, service dates and available battery details. No health percentage is inferred from charge or runtime.
 - **History** — power draw or load percentage and input voltage across 1-hour, 24-hour, 7-day and 30-day ranges.
 - **Events** — fixture examples of power-source, battery and connectivity transitions.
 

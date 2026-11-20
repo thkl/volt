@@ -1,0 +1,129 @@
+<div class="battery-health-page">
+  <header class="page-heading">
+    <div>
+      <p class="eyebrow">BATTERY CARE</p>
+      <h1>Battery health</h1>
+      <p class="page-subtitle">
+        {{ state.selectedDevice().name }} · {{ state.selectedDevice().model }}
+        @if (state.selectedDevice().hostName) {
+          · {{ state.selectedDevice().hostName }}
+        }
+      </p>
+    </div>
+    @if (state.isDemo()) {
+      <span class="demo-note"><span aria-hidden="true"></span> Demo battery report</span>
+    } @else {
+      <span class="demo-note"><span aria-hidden="true"></span> UPS-reported data</span>
+    }
+  </header>
+
+  @if (
+    state.backendMode() === 'none' ||
+    ((state.backendMode() === 'nut' || state.backendMode() === 'multi') &&
+      state.devices().length === 0)
+  ) {
+    <section class="health-empty" aria-labelledby="battery-empty-title">
+      <span class="health-empty-mark" aria-hidden="true">i</span>
+      <h2 id="battery-empty-title">
+        {{
+          state.backendMode() === 'none'
+            ? 'Connect a UPS to view battery health'
+            : 'Waiting for UPS data'
+        }}
+      </h2>
+      <p>
+        Add a NUT host in Settings. Volt will show battery status, self-test results, and service
+        dates when your UPS reports them.
+      </p>
+    </section>
+  } @else {
+    <section
+      class="health-summary"
+      [class.tone-good]="statusTone() === 'good'"
+      [class.tone-warning]="statusTone() === 'warning'"
+      [class.tone-critical]="statusTone() === 'critical'"
+      aria-labelledby="health-summary-title"
+    >
+      <span class="health-summary-indicator" aria-hidden="true"></span>
+      <div>
+        <p class="eyebrow">UPS-REPORTED BATTERY STATUS</p>
+        <h2 id="health-summary-title">{{ statusText() }}</h2>
+        <p>
+          @if (batteryStatus()) {
+            Read from <code>battery.status</code>. Volt shows the UPS report without estimating a
+            health percentage.
+          } @else {
+            This UPS has not provided <code>battery.status</code>. See the available self-test and
+            service details below.
+          }
+        </p>
+      </div>
+    </section>
+
+    @if (!healthDataAvailable()) {
+      <section class="health-info" role="status">
+        <span aria-hidden="true">i</span>
+        <p>
+          This UPS or NUT driver does not currently expose battery health fields. Charge and runtime
+          remain useful operating readings, but they do not measure battery capacity.
+        </p>
+      </section>
+    }
+
+    <section class="health-cards" aria-label="Battery service information">
+      <article class="health-card">
+        <p class="card-label">LAST SELF-TEST</p>
+        <strong
+          [class.text-good]="selfTestTone() === 'good'"
+          [class.text-warning]="selfTestTone() === 'warning'"
+          [class.text-critical]="selfTestTone() === 'critical'"
+        >
+          {{ selfTestResult() ?? 'Not reported' }}
+        </strong>
+        <span>{{
+          selfTestDate() ? 'Test date · ' + selfTestDate() : 'Result from ups.test.result'
+        }}</span>
+      </article>
+
+      <article class="health-card">
+        <p class="card-label">BATTERY AGE</p>
+        <strong>{{ batteryAge()?.value ?? 'Not reported' }}</strong>
+        <span>{{ batteryAge()?.source ?? 'battery.date' }}</span>
+      </article>
+
+      <article class="health-card" [class.card-warning]="maintenanceDate()?.tone === 'warning'">
+        <p class="card-label">MAINTENANCE</p>
+        <strong>{{ maintenanceDate()?.value ?? 'Not reported' }}</strong>
+        <span>{{ maintenanceDate()?.source ?? 'battery.date.maintenance' }}</span>
+      </article>
+    </section>
+
+    <section class="reported-panel" aria-labelledby="reported-title">
+      <div class="reported-heading">
+        <div>
+          <p class="eyebrow">DEVICE DETAILS</p>
+          <h2 id="reported-title">Other reported battery data</h2>
+        </div>
+        <span>Selected UPS · {{ snapshot().deviceName }}</span>
+      </div>
+      <dl class="reported-grid">
+        @for (detail of details(); track detail.label) {
+          <div class="reported-item">
+            <dt>{{ detail.label }}</dt>
+            <dd>{{ detail.value }}</dd>
+            <span>{{ detail.source }}</span>
+          </div>
+        }
+      </dl>
+    </section>
+
+    <section class="health-info" aria-label="How battery health is reported">
+      <span aria-hidden="true">i</span>
+      <p>
+        Health, test, and maintenance fields depend on the UPS model and NUT driver. Volt presents
+        the values the device reports; use the UPS self-test result and manufacturer guidance when
+        planning battery service.
+      </p>
+    </section>
+  }
+</div>

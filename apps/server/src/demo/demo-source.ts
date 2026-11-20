@@ -27,6 +27,19 @@ export const DEMO_DEVICES: readonly DemoDevice[] = [
   },
 ];
 
+const demoBatteryHealthVariables: Record<string, string> = {
+  'battery.status': 'ok',
+  'battery.date': '2025/08/01',
+  'battery.date.maintenance': '2027/08/01',
+  'battery.type': 'PbAc',
+  'battery.capacity': '7.2',
+  'battery.capacity.nominal': '7.2',
+  'battery.packs': '1',
+  'battery.packs.bad': '0',
+  'ups.test.result': 'Done and passed',
+  'ups.test.date': '2026/10/20',
+};
+
 type Fixture = Pick<
   UpsSnapshot,
   | 'flow'
@@ -254,7 +267,7 @@ export function demoSnapshot(
 ): UpsSnapshot {
   const fixture = structuredClone(fixtures[scenario]);
   const observedAt = scenario === 'stale' ? now - 14 * 60_000 : now;
-  const variables = { ...fixture.rawVariables };
+  const variables = { ...demoBatteryHealthVariables, ...fixture.rawVariables };
   const adjust = (value: number | null, delta: number): number | null =>
     value === null ? null : Math.round((value + delta) * 10) / 10;
 

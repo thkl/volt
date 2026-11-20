@@ -1,0 +1,368 @@
+:host {
+  display: block;
+}
+
+.battery-health-page {
+  display: grid;
+  gap: 17px;
+}
+
+.page-heading {
+  display: flex;
+  min-height: 82px;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.eyebrow {
+  margin: 0 0 7px;
+  color: #7f8b8d;
+  font-size: 0.65rem;
+  font-weight: 720;
+  letter-spacing: 0.13em;
+}
+
+.page-heading h1 {
+  margin: 0;
+  color: #f4f6f5;
+  font-size: clamp(1.8rem, 3vw, 2.55rem);
+  font-weight: 620;
+  letter-spacing: -0.05em;
+  line-height: 1;
+}
+
+.page-subtitle {
+  margin: 8px 0 0;
+  color: #aeb7b9;
+  font-size: 0.94rem;
+}
+
+.demo-note {
+  display: inline-flex;
+  min-height: 31px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+  padding: 0 10px;
+  border: 1px solid #29405a;
+  border-radius: 7px;
+  background: rgb(47 102 156 / 11%);
+  color: #b6d5f2;
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.demo-note span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #55a9ff;
+}
+
+.health-summary,
+.health-empty,
+.reported-panel {
+  border: 1px solid #2a3035;
+  border-radius: 14px;
+  background: #15181a;
+}
+
+.health-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 15px;
+  padding: 20px 22px;
+}
+
+.health-summary-indicator {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  margin-top: 2px;
+  border-radius: 50%;
+  background: #849093;
+  box-shadow: 0 0 0 5px rgb(132 144 147 / 10%);
+}
+
+.tone-good .health-summary-indicator {
+  background: #22d66e;
+  box-shadow: 0 0 0 5px rgb(34 214 110 / 10%);
+}
+
+.tone-warning .health-summary-indicator {
+  background: #f5a524;
+  box-shadow: 0 0 0 5px rgb(245 165 36 / 10%);
+}
+
+.tone-critical .health-summary-indicator {
+  background: #ff615c;
+  box-shadow: 0 0 0 5px rgb(255 97 92 / 10%);
+}
+
+.health-summary h2 {
+  margin: 0;
+  color: #edf1ef;
+  font-size: 1.2rem;
+  font-weight: 620;
+  overflow-wrap: anywhere;
+}
+
+.health-summary > div > p:last-child {
+  margin: 8px 0 0;
+  color: #9ca7aa;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.health-summary code {
+  color: #c4d2d0;
+  font-size: 0.74rem;
+}
+
+.health-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.health-card {
+  display: flex;
+  min-height: 142px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 17px 18px;
+  border: 1px solid #2a3035;
+  border-radius: 12px;
+  background: #15181a;
+}
+
+.card-label {
+  margin: 0;
+  color: #7f8b8d;
+  font-size: 0.62rem;
+  font-weight: 720;
+  letter-spacing: 0.11em;
+}
+
+.health-card strong {
+  color: #e4eae7;
+  font-size: 1.06rem;
+  font-weight: 630;
+  overflow-wrap: anywhere;
+}
+
+.health-card > span {
+  margin-top: auto;
+  color: #929d9f;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.text-good {
+  color: #6cdf9a !important;
+}
+
+.text-warning {
+  color: #f0ba60 !important;
+}
+
+.text-critical {
+  color: #ff8982 !important;
+}
+
+.card-warning {
+  border-color: #55442a;
+  background: #191712;
+}
+
+.card-warning strong {
+  color: #f0ba60;
+}
+
+.reported-panel {
+  overflow: hidden;
+}
+
+.reported-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 17px 20px;
+  border-bottom: 1px solid #2a3035;
+}
+
+.reported-heading h2 {
+  margin: 0;
+  color: #e9eeec;
+  font-size: 0.95rem;
+  font-weight: 620;
+}
+
+.reported-heading > span {
+  color: #899496;
+  font-size: 0.71rem;
+  text-align: right;
+}
+
+.reported-heading .eyebrow {
+  margin-bottom: 5px;
+}
+
+.reported-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.reported-item {
+  display: grid;
+  min-height: 86px;
+  align-content: center;
+  gap: 5px;
+  padding: 13px 20px;
+}
+
+.reported-item:nth-child(2n) {
+  border-left: 1px solid #252b2e;
+}
+
+.reported-item:nth-child(n + 3) {
+  border-top: 1px solid #252b2e;
+}
+
+.reported-item dt {
+  color: #a4aeaf;
+  font-size: 0.72rem;
+}
+
+.reported-item dd {
+  margin: 0;
+  color: #e8edeb;
+  font-size: 0.9rem;
+  font-weight: 590;
+  overflow-wrap: anywhere;
+}
+
+.reported-item > span {
+  color: #718083;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.62rem;
+  overflow-wrap: anywhere;
+}
+
+.health-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 14px 17px;
+  border: 1px solid #293238;
+  border-radius: 11px;
+  background: #14191c;
+}
+
+.health-info > span,
+.health-empty-mark {
+  display: grid;
+  width: 21px;
+  height: 21px;
+  flex: none;
+  place-items: center;
+  border: 1px solid #44617a;
+  border-radius: 50%;
+  color: #91c7f2;
+  font-family: Georgia, serif;
+  font-size: 0.78rem;
+  font-style: italic;
+}
+
+.health-info p {
+  margin: 0;
+  color: #9ca7aa;
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
+
+.health-empty {
+  display: grid;
+  min-height: 270px;
+  align-content: center;
+  justify-items: center;
+  padding: 30px;
+  text-align: center;
+}
+
+.health-empty-mark {
+  width: 32px;
+  height: 32px;
+  margin-bottom: 9px;
+  font-size: 0.95rem;
+}
+
+.health-empty h2 {
+  margin: 0;
+  color: #e4eae7;
+  font-size: 1rem;
+  font-weight: 620;
+}
+
+.health-empty p {
+  max-width: 510px;
+  margin: 7px 0 0;
+  color: #929d9f;
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+
+@media (max-width: 760px) {
+  .health-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .health-card {
+    min-height: 118px;
+  }
+}
+
+@media (max-width: 600px) {
+  .battery-health-page {
+    gap: 12px;
+  }
+
+  .page-heading {
+    min-height: auto;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .page-heading h1 {
+    font-size: 1.85rem;
+  }
+
+  .page-subtitle {
+    margin-top: 6px;
+    font-size: 0.82rem;
+  }
+
+  .health-summary {
+    padding: 16px;
+  }
+
+  .reported-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 15px;
+  }
+
+  .reported-heading > span {
+    text-align: left;
+  }
+
+  .reported-item {
+    padding: 12px;
+  }
+}

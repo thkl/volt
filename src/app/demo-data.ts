@@ -58,6 +58,19 @@ export const DEMO_DEVICES: DemoDevice[] = [
   { id: 'network-closet', name: 'Network closet', model: 'Rack UPS · 1000 VA' },
 ];
 
+const demoBatteryHealthVariables: Record<string, string> = {
+  'battery.status': 'ok',
+  'battery.date': '2025/08/01',
+  'battery.date.maintenance': '2027/08/01',
+  'battery.type': 'PbAc',
+  'battery.capacity': '7.2',
+  'battery.capacity.nominal': '7.2',
+  'battery.packs': '1',
+  'battery.packs.bad': '0',
+  'ups.test.result': 'Done and passed',
+  'ups.test.date': '2026/10/20',
+};
+
 const scenarioBase: Record<
   DemoScenario,
   Omit<UpsSnapshot, 'deviceId' | 'deviceName' | 'model' | 'manufacturer'>
@@ -270,6 +283,7 @@ export function getDemoSnapshot(scenario: DemoScenario, deviceId: string): UpsSn
     deviceName: device.name,
     model: device.model,
     manufacturer: 'Demo hardware',
+    rawVariables: { ...demoBatteryHealthVariables, ...base.rawVariables },
     loadPercent: shift(base.loadPercent, secondaryDevice ? -4 : 0),
     realPower: shift(base.realPower, secondaryDevice ? -28 : 0),
     outputVoltage: shift(base.outputVoltage, secondaryDevice ? -0.2 : 0),
