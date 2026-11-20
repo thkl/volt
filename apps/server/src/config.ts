@@ -1,6 +1,7 @@
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { isIP } from 'node:net';
 import { fileURLToPath } from 'node:url';
+import { resolveFileBackedSecrets } from './secret-env.js';
 
 const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 
@@ -42,6 +43,7 @@ export interface AppConfig {
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
+  env = resolveFileBackedSecrets(env);
   const demoMode = parseBoolean(env['DEMO_MODE'], true, 'DEMO_MODE');
   const nutHost = nonEmpty(env['NUT_HOST']);
   const nutUsername = nonEmpty(env['NUT_USERNAME']);

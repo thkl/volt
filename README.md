@@ -27,7 +27,28 @@ The API exposes host management, collector types, device snapshots, bounded hist
 
 ## Optional sign-in
 
-Authentication is disabled when the auth environment variables are empty. For password sign-in, set `AUTH_EMAIL` and `AUTH_PASSWORD`. For OIDC, set `AUTH_EMAIL`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` and `OIDC_REDIRECT_URI`; register that exact redirect URI with the identity provider. The OIDC account must return a verified email matching `AUTH_EMAIL` (case-insensitive). OIDC ID tokens signed with RS256 are supported. Set `OIDC_CLIENT_AUTH_METHOD=client_secret_post` if the identity provider requires credentials in the token request body; it defaults to `client_secret_basic`.
+Authentication is disabled when no auth credentials are configured. For password sign-in without Infisical, set `AUTH_EMAIL` and `AUTH_PASSWORD`. For OIDC without Infisical, set `AUTH_EMAIL`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` and `OIDC_REDIRECT_URI`; register that exact redirect URI with the identity provider. The OIDC account must return a verified email matching `AUTH_EMAIL` (case-insensitive). OIDC ID tokens signed with RS256 are supported. Set `OIDC_CLIENT_AUTH_METHOD=client_secret_post` if the identity provider requires credentials in the token request body; it defaults to `client_secret_basic`.
+
+To keep those auth credentials out of Volt's environment, configure Infisical Universal Auth with `INFISICAL_CLIENT_ID` and `INFISICAL_CLIENT_SECRET` (or the accepted aliases `INFISICAL_MACHINE_ID` and `INFISICAL_MACHINE_TOKEN`). The latter is the machine identity's Universal Auth client secret, not a pre-issued access token. Set `INFISICAL_PROJECT_ID`; `INFISICAL_ENVIRONMENT` defaults to `prod`, `INFISICAL_SECRET_PATH` defaults to `/`, and `INFISICAL_SITE_URL` defaults to `https://us.infisical.com`. Set `INFISICAL_SITE_URL` to the EU cloud or your self-hosted instance when applicable. Create secrets named `AUTH_EMAIL`, `AUTH_PASSWORD`, `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET` at that project/environment/path. Include `AUTH_EMAIL` and either `AUTH_PASSWORD` or both OIDC client credentials. Keep the non-secret OIDC settings (`OIDC_ISSUER`, `OIDC_REDIRECT_URI`, and optionally `OIDC_CLIENT_AUTH_METHOD`) in the environment. Infisical values take precedence over direct auth variables and file fallbacks, are fetched at startup, and are held in Volt's in-memory config without being copied into `process.env`. Volt fails to start if the configured Infisical source cannot provide a usable auth configuration.
+
+The Infisical client ID and client secret can each be supplied as environment variables or as file paths in `INFISICAL_CLIENT_ID_FILE` and `INFISICAL_CLIENT_SECRET_FILE`. The `INFISICAL_MACHINE_ID_FILE` and `INFISICAL_MACHINE_TOKEN_FILE` aliases are also supported. The same `_FILE` pattern works for direct auth variables when Infisical is not configured. For Docker Compose secrets, mount the files and set the corresponding `*_FILE` path, for example:
+
+```yaml
+services:
+  volt:
+    secrets:
+      - infisical_client_id
+      - infisical_client_secret
+    environment:
+      INFISICAL_CLIENT_ID_FILE: /run/secrets/infisical_client_id
+      INFISICAL_CLIENT_SECRET_FILE: /run/secrets/infisical_client_secret
+
+secrets:
+  infisical_client_id:
+    file: ./secrets/infisical_client_id
+  infisical_client_secret:
+    file: ./secrets/infisical_client_secret
+```
 
 The OIDC redirect URI must end in `/api/auth/oidc/callback`. For local development through Angular's proxy, it can be `http://localhost:4200/api/auth/oidc/callback`; for a built app, use its public origin. OIDC issuer and redirect URLs must use HTTPS outside localhost. The backend validates state, nonce, PKCE and the ID token signature and claims. Local sign-in sessions use an HttpOnly, SameSite=Lax cookie and expire after eight hours; they are held in memory and are cleared when the backend restarts. Sign-in attempts are rate-limited by client IP. If Volt is behind a reverse proxy, set `TRUSTED_PROXY_CIDRS` to the proxy IP addresses or CIDRs so the limiter can distinguish clients. Only trust proxies that overwrite `X-Forwarded-For` with the connecting client address.
 
