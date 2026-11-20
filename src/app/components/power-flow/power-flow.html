@@ -1,0 +1,119 @@
+<div
+  class="flow-stage"
+  [class.flow-online]="snapshot().flow === 'online'"
+  [class.flow-battery]="snapshot().flow === 'battery'"
+  [class.flow-stale]="snapshot().flow === 'stale'"
+  [class.flow-unknown]="snapshot().flow === 'unknown'"
+>
+  <svg
+    class="flow-cables"
+    viewBox="0 0 960 360"
+    preserveAspectRatio="none"
+    aria-hidden="true"
+    focusable="false"
+  >
+    <defs>
+      <linearGradient id="floorGlow" x1="0" x2="0" y1="0" y2="1">
+        <stop offset="0" stop-color="#1d2925" stop-opacity="0.05" />
+        <stop offset="1" stop-color="#22d66e" stop-opacity="0.16" />
+      </linearGradient>
+      <filter id="softGlow" x="-100%" y="-100%" width="300%" height="300%">
+        <feGaussianBlur stdDeviation="5" result="blur" />
+        <feMerge>
+          <feMergeNode in="blur" />
+          <feMergeNode in="SourceGraphic" />
+        </feMerge>
+      </filter>
+    </defs>
+
+    <path class="floor-light" d="M30 284 188 250 934 258 958 314 135 338Z" fill="url(#floorGlow)" />
+    <path class="floor-line" d="M33 293 201 259 931 267" />
+
+    <path class="wire wire-grid" d="M234 256 C285 257 310 237 357 241 C391 244 411 266 448 252" />
+    <path class="wire wire-load" d="M543 252 C580 268 615 241 653 239 C674 238 685 251 705 251" />
+    <g class="particles grid-particles" filter="url(#softGlow)">
+      <circle r="4">
+        <animateMotion
+          dur="2.8s"
+          repeatCount="indefinite"
+          path="M234 256 C285 257 310 237 357 241 C391 244 411 266 448 252"
+        />
+      </circle>
+      <circle r="4">
+        <animateMotion
+          begin="-1.4s"
+          dur="2.8s"
+          repeatCount="indefinite"
+          path="M234 256 C285 257 310 237 357 241 C391 244 411 266 448 252"
+        />
+      </circle>
+    </g>
+    <g class="particles load-particles" filter="url(#softGlow)">
+      <circle r="4">
+        <animateMotion
+          dur="2.7s"
+          repeatCount="indefinite"
+          path="M543 252 C580 268 615 241 653 239 C674 238 685 251 705 251"
+        />
+      </circle>
+      <circle r="4">
+        <animateMotion
+          begin="-1.3s"
+          dur="2.7s"
+          repeatCount="indefinite"
+          path="M543 252 C580 268 615 241 653 239 C674 238 685 251 705 251"
+        />
+      </circle>
+    </g>
+  </svg>
+
+  <div class="scene-layout" aria-hidden="true">
+    <div class="scene-equipment grid-equipment">
+      <img src="/assets/grid.png" alt="" />
+    </div>
+    <div class="scene-equipment ups-equipment">
+      <div class="ups-photo">
+        <img src="/assets/ups.png" alt="" />
+        <span
+          class="ups-screen-state"
+          [class.screen-on-battery]="snapshot().flow === 'battery'"
+          [class.screen-low-battery]="snapshot().lowBattery"
+          [class.screen-unknown]="snapshot().flow === 'unknown' || snapshot().flow === 'stale'"
+        >
+          <span class="screen-state-dot"></span>
+          <span>{{ upsScreenValue() }}</span>
+        </span>
+      </div>
+    </div>
+    <div class="scene-equipment rack-equipment">
+      <div class="rack-photo">
+        <img src="/assets/server_rack.png" alt="" />
+        <span class="rack-blue-glow"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="equipment-labels" aria-label="Power flow equipment readings">
+    <div class="equipment-label grid-label">
+      <span>GRID</span>
+      <strong>{{ gridValue() }}</strong>
+    </div>
+    <div class="equipment-label ups-label">
+      <span>UPS</span>
+      <strong>{{ upsValue() }}</strong>
+    </div>
+    <div class="equipment-label load-label">
+      <span>LOAD</span>
+      <strong>{{ loadValue() }}</strong>
+    </div>
+  </div>
+
+  <p
+    class="flow-caption"
+    [class.caption-warning]="snapshot().lowBattery"
+    [class.caption-muted]="snapshot().flow === 'stale' || snapshot().flow === 'unknown'"
+  >
+    <span class="caption-dot" aria-hidden="true"></span>
+    <span>{{ stateLabel() }}</span>
+  </p>
+</div>

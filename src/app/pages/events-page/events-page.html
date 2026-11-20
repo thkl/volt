@@ -1,0 +1,58 @@
+<div class="events-page">
+  <header class="page-heading">
+    <div>
+      <p class="eyebrow">STATE CHANGES</p>
+      <h1>Events</h1>
+      <p class="page-subtitle">Power source, battery and connectivity transitions</p>
+    </div>
+    @if (state.isDemo()) {
+      <span class="demo-note"><span aria-hidden="true"></span> Demo timeline · fixture events</span>
+    } @else {
+      <span class="demo-note"><span aria-hidden="true"></span> Observed NUT transitions</span>
+    }
+  </header>
+
+  <section class="event-panel" aria-labelledby="event-panel-title">
+    <div class="event-panel-header">
+      <div>
+        <h2 id="event-panel-title">Recent events</h2>
+        <p>{{ state.selectedDevice().name }} · {{ state.events().length }} observed transitions</p>
+      </div>
+      <span class="event-filter">Most recent first</span>
+    </div>
+
+    @if (state.events().length > 0) {
+      <ol class="event-list" aria-label="Recent UPS events">
+        @for (event of state.events(); track event.id ?? event.time + event.type) {
+          <li
+            class="event-row"
+            [class.event-good]="event.tone === 'good'"
+            [class.event-warning]="event.tone === 'warning'"
+            [class.event-critical]="event.tone === 'critical'"
+            [class.event-neutral]="event.tone === 'neutral'"
+          >
+            <time>{{ event.time }}</time>
+            <span class="event-marker" aria-hidden="true"></span>
+            <div class="event-copy">
+              <div class="event-title-row">
+                <h3>{{ event.type }}</h3>
+                <span class="event-device">{{ event.device }}</span>
+              </div>
+              <p>{{ event.detail }}</p>
+            </div>
+          </li>
+        }
+      </ol>
+    } @else {
+      <div class="empty-events">
+        <span class="empty-symbol" aria-hidden="true">—</span>
+        <h3>No events recorded</h3>
+        <p>State changes will appear here when the collector observes a transition.</p>
+      </div>
+    }
+  </section>
+
+  <p class="event-footnote">
+    Events represent observed transitions. A gap in observation can make a duration uncertain.
+  </p>
+</div>

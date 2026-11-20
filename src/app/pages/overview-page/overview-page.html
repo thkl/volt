@@ -1,0 +1,203 @@
+<div class="overview-page">
+  @if (
+    state.backendMode() === 'none' ||
+    ((state.backendMode() === 'nut' || state.backendMode() === 'multi') &&
+      state.devices().length === 0)
+  ) {
+    <section class="setup-empty" aria-labelledby="setup-empty-title">
+      <p class="eyebrow">
+        {{ state.backendMode() === 'none' ? 'GET STARTED' : 'WAITING FOR DATA' }}
+      </p>
+      <h1 id="setup-empty-title">
+        {{ state.backendMode() === 'none' ? 'Connect a NUT host' : 'No UPS devices found' }}
+      </h1>
+      <p>
+        {{
+          state.backendMode() === 'none'
+            ? 'Add your Network UPS Tools server in Settings to start seeing live power and battery readings.'
+            : 'Check that the NUT host is reachable and has UPS devices configured.'
+        }}
+      </p>
+      @for (source of state.sourceHealth(); track source.hostId) {
+        <div class="source-diagnostic">
+          <strong>{{ source.name }}</strong>
+          <span> {{ source.host }}:{{ source.port }} · {{ source.phase ?? 'starting' }} </span>
+          <p>
+            {{
+              source.lastError ??
+                source.discoveredUps +
+                  (source.discoveredUps === 1 ? ' UPS discovered' : ' UPS devices discovered')
+            }}
+          </p>
+          @if (source.upsNames.length > 0) {
+            <small>Discovered: {{ source.upsNames.join(', ') }}</small>
+          }
+          @if (source.lastErrorCode) {
+            <code>{{ source.lastErrorCode }}</code>
+          }
+          @if (source.lastPollAt) {
+            <small>Last poll: {{ source.lastPollAt }}</small>
+          }
+        </div>
+      }
+    </section>
+  } @else {
+    <header class="page-heading">
+      <div>
+        <p class="eyebrow">LIVE POWER</p>
+        <h1>Power overview</h1>
+        <p class="page-subtitle">
+          {{ snapshot().deviceName }}
+          @if (state.selectedDevice().hostName) {
+            · {{ state.selectedDevice().hostName }}
+          }
+          · {{ snapshot().model }}
+        </p>
+      </div>
+      @if (state.isDemo()) {
+        <span class="demo-note"
+          ><span aria-hidden="true"></span> Demo data · simulated readings</span
+        >
+      } @else {
+        <span class="demo-note"><span aria-hidden="true"></span> Live NUT readings</span>
+      }
+    </header>
+
+    <section class="hero-grid" aria-label="Reported power flow and battery state">
+      <div class="flow-panel">
+        <app-power-flow [snapshot]="snapshot()" />
+      </div>
+
+      <aside class="battery-panel" aria-labelledby="battery-title">
+        <div class="battery-heading">
+          <h2 id="battery-title">Battery</h2>
+          @if (snapshot().lowBattery) {
+            <span class="battery-alert">LOW BATTERY</span>
+          } @else if (snapshot().charging) {
+            <span class="battery-state">CHARGING</span>
+          } @else {
+            <span class="battery-state">{{
+              snapshot().flow === 'battery' ? 'DISCHARGING' : 'READY'
+            }}</span>
+          }
+        </div>
+
+        <p
+          class="battery-value"
+          [class.value-unavailable]="snapshot().batteryCharge === null"
+          [class.value-critical]="snapshot().lowBattery"
+        >
+          {{ batteryText() }}
+        </p>
+
+        <div class="runtime-block">
+          <span>Estimated runtime</span>
+          <strong [class.value-unavailable]="snapshot().runtimeSeconds === null">{{
+            runtimeText()
+          }}</strong>
+        </div>
+
+        <div
+          class="battery-illustration"
+          [class.battery-low]="snapshot().lowBattery"
+          role="img"
+          [attr.aria-label]="
+            snapshot().batteryCharge === null
+              ? 'Battery charge unavailable'
+              : 'Battery charge ' + batteryText()
+          "
+        >
+          <span class="battery-track">
+            <span class="battery-fill" [style.width.%]="batteryFill()"></span>
+            <span class="battery-segments" aria-hidden="true"></span>
+          </span>
+          <span class="battery-terminal" aria-hidden="true"></span>
+        </div>
+        <p class="battery-note">{{ batteryNote() }}</p>
+        <p class="sample-time">Latest device estimate · {{ snapshot().observedAt }}</p>
+      </aside>
+    </section>
+
+    <app-history-chart
+      [snapshot]="snapshot()"
+      [scenario]="state.scenario()"
+      [deviceId]="state.selectedDeviceId()"
+      [liveMode]="state.backendMode() === 'nut' || state.backendMode() === 'multi'"
+    />
+
+    <section class="metrics-strip" aria-label="Available electrical readings">
+      @for (item of metrics(); track item.label) {
+        <div class="metric-item">
+          <div class="metric-icon" aria-hidden="true">
+            @switch (item.icon) {
+              @case ('plug') {
+                <svg viewBox="0 0 32 32">
+                  <path d="M10 4v7m12-7v7M7 11h18v3a9 9 0 0 1-9 9h0a9 9 0 0 1-9-9v-3Zm9 12v5" />
+                </svg>
+              }
+              @case ('outlet') {
+                <svg viewBox="0 0 32 32">
+                  <rect x="5" y="4" width="22" height="24" rx="8" />
+                  <path d="M12 11v5m8-5v5m-4 4v3" />
+                </svg>
+              }
+              @case ('load') {
+                <svg viewBox="0 0 32 32">
+                  <path d="m4 10 12-6 12 6-12 6-12-6Zm0 6 12 6 12-6M4 22l12 6 12-6" />
+                </svg>
+              }
+              @default {
+                <svg viewBox="0 0 32 32"><path d="M3 18c4 0 4-8 8-8s4 12 9 12 5-12 9-12" /></svg>
+              }
+            }
+          </div>
+          <div class="metric-copy">
+            <span>{{ item.label }}</span>
+            <strong [class.value-unavailable]="item.value === 'Unavailable'">
+              {{ item.value }}<small>{{ item.unit }}</small>
+            </strong>
+          </div>
+        </div>
+      }
+    </section>
+
+    <div class="below-metrics">
+      <details class="device-details">
+        <summary>
+          <span>Device details</span>
+          <span class="summary-hint">Read-only values · reported variables</span>
+        </summary>
+        <div class="device-details-body">
+          <div class="detail-grid">
+            <div>
+              <span>Manufacturer</span><strong>{{ snapshot().manufacturer }}</strong>
+            </div>
+            <div>
+              <span>Model</span><strong>{{ snapshot().model }}</strong>
+            </div>
+            <div>
+              <span>Raw status</span><strong>{{ snapshot().status }}</strong>
+            </div>
+            <div>
+              <span>Last observed</span><strong>{{ snapshot().observedAt }}</strong>
+            </div>
+          </div>
+          <div class="raw-list">
+            <h2>Raw variables</h2>
+            <dl>
+              @for (entry of rawVariables(); track entry[0]) {
+                <div>
+                  <dt>{{ entry[0] }}</dt>
+                  <dd>{{ entry[1] }}</dd>
+                </div>
+              }
+            </dl>
+          </div>
+        </div>
+      </details>
+      <a class="text-link" routerLink="/events"
+        >View power events <span aria-hidden="true">→</span></a
+      >
+    </div>
+  }
+</div>

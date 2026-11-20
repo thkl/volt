@@ -1,0 +1,288 @@
+:host {
+  display: block;
+  min-width: 0;
+}
+
+.history-chart {
+  min-width: 0;
+  padding: 19px 21px 13px;
+  border: 1px solid #2a3035;
+  border-radius: 14px;
+  background: #15181a;
+}
+
+.history-chart.expanded {
+  padding: 23px 25px 17px;
+}
+
+.chart-header {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  margin-bottom: 9px;
+}
+
+.chart-heading h2 {
+  margin: 0;
+  color: #f2f4f3;
+  font-size: 1.2rem;
+  font-weight: 620;
+  letter-spacing: -0.025em;
+}
+
+.chart-heading p {
+  margin: 4px 0 0;
+  color: #8e999d;
+  font-size: 0.77rem;
+}
+
+.chart-tools {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 18px;
+}
+
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.legend-toggle {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #dce1df;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
+
+.legend-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.legend-toggle.is-muted:not(:disabled) {
+  color: #7c8589;
+}
+
+.legend-swatch {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+}
+
+.power-swatch {
+  background: #22d66e;
+  box-shadow: 0 0 7px rgb(34 214 110 / 45%);
+}
+
+.voltage-swatch {
+  background: #4a9cff;
+}
+
+.range-picker {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid #30383c;
+  border-radius: 9px;
+  background: #111416;
+}
+
+.range-picker button {
+  min-width: 42px;
+  min-height: 29px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #a4adaf;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.72rem;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
+}
+
+.range-picker button.selected {
+  background: #2b3033;
+  color: #f5f7f6;
+}
+
+.chart-frame {
+  width: 100%;
+  overflow: hidden;
+}
+
+.chart-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.grid-line {
+  stroke: #30373b;
+  stroke-width: 1;
+  opacity: 0.84;
+}
+
+.axis-label {
+  fill: #a5aeb0;
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.axis-left {
+  text-anchor: end;
+}
+
+.axis-right {
+  text-anchor: start;
+}
+
+.axis-time {
+  fill: #d0d5d4;
+  text-anchor: middle;
+}
+
+.area-series {
+  opacity: 0.85;
+}
+
+.line-series {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.power-series {
+  stroke: #22d66e;
+  filter: drop-shadow(0 0 4px rgb(34 214 110 / 32%));
+}
+
+.power-series.battery-series {
+  stroke: #f5a524;
+  filter: drop-shadow(0 0 4px rgb(245 165 36 / 34%));
+}
+
+.voltage-series {
+  stroke: #4a9cff;
+  stroke-width: 2;
+  filter: drop-shadow(0 0 3px rgb(74 156 255 / 24%));
+}
+
+.chart-empty {
+  display: grid;
+  min-height: 210px;
+  place-items: center;
+  margin: 0;
+  color: #a2abad;
+  font-size: 0.9rem;
+}
+
+.chart-footer {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: -2px;
+}
+
+.chart-summary,
+.unavailable-note {
+  margin: 0;
+  color: #929c9f;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.unavailable-note {
+  color: #c7a967;
+  text-align: right;
+}
+
+@media (max-width: 960px) {
+  .chart-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .chart-tools {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 10px;
+  }
+}
+
+@media (max-width: 620px) {
+  .history-chart,
+  .history-chart.expanded {
+    padding: 16px 12px 12px;
+  }
+
+  .chart-tools {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .legend {
+    flex-wrap: wrap;
+    gap: 3px 12px;
+  }
+
+  .legend-toggle {
+    font-size: 0.68rem;
+  }
+
+  .range-picker {
+    align-self: stretch;
+    justify-content: space-between;
+  }
+
+  .range-picker button {
+    flex: 1;
+  }
+
+  .axis-label {
+    font-size: 18px;
+  }
+
+  .axis-left {
+    transform: translateX(6px);
+  }
+
+  .chart-footer {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .unavailable-note {
+    text-align: left;
+  }
+}

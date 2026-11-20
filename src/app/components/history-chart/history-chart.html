@@ -1,0 +1,115 @@
+<section class="history-chart" [class.expanded]="expanded()" aria-labelledby="history-chart-title">
+  <div class="chart-header">
+    <div class="chart-heading">
+      <h2 id="history-chart-title">{{ expanded() ? 'Power and voltage' : 'History' }}</h2>
+      @if (expanded()) {
+        <p>Collected samples · gaps are preserved when data is missing</p>
+      }
+    </div>
+
+    <div class="chart-tools">
+      <div class="legend" aria-label="Chart series">
+        <button
+          class="legend-toggle"
+          [class.is-muted]="!showPrimary()"
+          [attr.aria-pressed]="showPrimary()"
+          type="button"
+          (click)="togglePrimary()"
+        >
+          <span class="legend-swatch power-swatch" aria-hidden="true"></span>
+          {{ chart().primaryLabel }} ({{ chart().primaryUnit }})
+        </button>
+        <button
+          class="legend-toggle"
+          [class.is-muted]="!showVoltage() || !chart().voltageAvailable"
+          [attr.aria-pressed]="showVoltage() && chart().voltageAvailable"
+          [disabled]="!chart().voltageAvailable"
+          type="button"
+          (click)="toggleVoltage()"
+        >
+          <span class="legend-swatch voltage-swatch" aria-hidden="true"></span>
+          Input voltage (V)
+        </button>
+      </div>
+
+      <div class="range-picker" role="group" aria-label="History time range">
+        @for (option of ranges; track option) {
+          <button
+            type="button"
+            [attr.aria-pressed]="range() === option"
+            [class.selected]="range() === option"
+            (click)="selectRange(option)"
+          >
+            {{ option }}
+          </button>
+        }
+      </div>
+    </div>
+  </div>
+
+  @if (!showPrimary() && (!showVoltage() || !chart().voltageAvailable)) {
+    <p class="chart-empty" role="status">Choose a series to show its history.</p>
+  } @else {
+    <div class="chart-frame">
+      <svg
+        class="chart-svg"
+        viewBox="0 0 1000 242"
+        role="img"
+        [attr.aria-label]="chart().ariaLabel"
+      >
+        <title>{{ chart().ariaLabel }}</title>
+        <defs>
+          <linearGradient id="voltPowerFill" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0" stop-color="#22d66e" stop-opacity="0.3" />
+            <stop offset="1" stop-color="#22d66e" stop-opacity="0.015" />
+          </linearGradient>
+          <linearGradient id="voltBatteryFill" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0" stop-color="#f5a524" stop-opacity="0.26" />
+            <stop offset="1" stop-color="#f5a524" stop-opacity="0.015" />
+          </linearGradient>
+        </defs>
+
+        @for (tick of chart().leftTicks; track tick.label) {
+          <line class="grid-line" x1="68" [attr.x2]="932" [attr.y1]="tick.y" [attr.y2]="tick.y" />
+          <text class="axis-label axis-left" x="56" [attr.y]="tick.y + 4">{{ tick.label }}</text>
+        }
+        @if (chart().voltageAvailable) {
+          <text class="axis-label axis-right" x="944" y="30">235 V</text>
+          <text class="axis-label axis-right" x="944" y="112">230 V</text>
+          <text class="axis-label axis-right" x="944" y="194">225 V</text>
+        }
+        @for (tick of chart().xTicks; track tick.label) {
+          <text class="axis-label axis-time" [attr.x]="tick.x" [attr.y]="tick.y">
+            {{ tick.label }}
+          </text>
+        }
+
+        @if (showPrimary()) {
+          <path
+            class="area-series"
+            [class.battery-series]="snapshot().flow === 'battery'"
+            [attr.fill]="
+              snapshot().flow === 'battery' ? 'url(#voltBatteryFill)' : 'url(#voltPowerFill)'
+            "
+            [attr.d]="chart().primaryArea"
+          />
+          <path
+            class="line-series power-series"
+            [class.battery-series]="snapshot().flow === 'battery'"
+            [attr.d]="chart().primaryLine"
+          />
+        }
+        @if (showVoltage() && chart().voltageAvailable) {
+          <path class="line-series voltage-series" [attr.d]="chart().voltageLine" />
+        }
+      </svg>
+    </div>
+  }
+
+  <div class="chart-footer">
+    <p class="chart-summary">{{ chart().summary }}</p>
+    @if (!chart().voltageAvailable) {
+      <p class="unavailable-note">{{ chart().voltageSummary }}</p>
+    }
+  </div>
+</section>

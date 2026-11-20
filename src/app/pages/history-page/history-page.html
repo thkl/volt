@@ -1,0 +1,38 @@
+<div class="history-page">
+  <header class="page-heading">
+    <div>
+      <p class="eyebrow">POWER TRENDS</p>
+      <h1>History</h1>
+      <p class="page-subtitle">
+        {{ state.selectedDevice().name }} · {{ state.selectedDevice().model }}
+        @if (state.selectedDevice().hostName) {
+          · {{ state.selectedDevice().hostName }}
+        }
+      </p>
+    </div>
+    @if (state.isDemo()) {
+      <span class="demo-note"><span aria-hidden="true"></span> Demo history · fixture data</span>
+    } @else {
+      <span class="demo-note"><span aria-hidden="true"></span> Stored NUT samples</span>
+    }
+  </header>
+
+  <app-history-chart
+    [snapshot]="state.snapshot()"
+    [scenario]="state.scenario()"
+    [deviceId]="state.selectedDeviceId()"
+    [liveMode]="state.backendMode() === 'nut' || state.backendMode() === 'multi'"
+    [expanded]="true"
+  />
+
+  <section class="history-info" aria-label="About the history chart">
+    <div class="info-mark" aria-hidden="true">i</div>
+    <div>
+      <h2>Samples stay honest</h2>
+      <p>
+        Each series keeps its own unit. Missing readings appear as gaps, and the runtime shown on
+        Overview remains the latest UPS-reported estimate.
+      </p>
+    </div>
+  </section>
+</div>

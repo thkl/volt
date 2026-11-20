@@ -1,0 +1,338 @@
+@if (auth.loading()) {
+  <main class="auth-screen" aria-live="polite">
+    <section class="auth-card">
+      <p class="eyebrow">VOLT</p>
+      <h1>Checking sign-in…</h1>
+    </section>
+  </main>
+} @else if (auth.authEnabled() && !auth.authenticated()) {
+  <main class="auth-screen">
+    <section class="auth-card" aria-labelledby="sign-in-title">
+      <p class="eyebrow">VOLT MONITOR</p>
+      <h1 id="sign-in-title">Sign in</h1>
+      <p class="auth-description">Sign in to view the UPS dashboard.</p>
+
+      @if (auth.oidcError()) {
+        <p class="auth-error" role="alert">
+          Sign-in was unsuccessful. Check your account and try again.
+        </p>
+      }
+      @if (auth.error()) {
+        <p class="auth-error" role="alert">{{ auth.error() }}</p>
+      }
+
+      @if (auth.methods().password) {
+        <form class="login-form" (ngSubmit)="signIn()">
+          <label class="form-field">
+            <span>Email</span>
+            <input
+              [(ngModel)]="loginEmail"
+              name="email"
+              type="email"
+              autocomplete="username"
+              required
+              maxlength="254"
+            />
+          </label>
+          <label class="form-field">
+            <span>Password</span>
+            <input
+              [(ngModel)]="loginPassword"
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              required
+              maxlength="1024"
+            />
+          </label>
+          <button class="primary-button login-submit" type="submit">Sign in</button>
+        </form>
+      }
+
+      @if (auth.methods().oidc) {
+        @if (auth.methods().password) {
+          <div class="auth-divider"><span>or</span></div>
+        }
+        <a class="oidc-button" href="/api/auth/oidc/start">Continue with your identity provider</a>
+      }
+    </section>
+  </main>
+} @else {
+  <a class="skip-link" href="#main-content">Skip to content</a>
+
+  <header class="topbar">
+    <a class="brand" routerLink="/" aria-label="Volt overview">
+      <svg viewBox="0 0 28 36" aria-hidden="true" focusable="false">
+        <path d="M16.6 1 3 20.5h8.7L9.4 35 25 14.9h-9.1L16.6 1Z" />
+      </svg>
+      <span>VOLT</span>
+    </a>
+
+    <nav class="primary-nav" aria-label="Main navigation">
+      <a
+        routerLink="/"
+        [routerLinkActiveOptions]="{ exact: true }"
+        routerLinkActive="active"
+        ariaCurrentWhenActive="page"
+        >Overview</a
+      >
+      <a routerLink="/history" routerLinkActive="active" ariaCurrentWhenActive="page">History</a>
+      <a routerLink="/events" routerLinkActive="active" ariaCurrentWhenActive="page">Events</a>
+    </nav>
+
+    <div class="topbar-controls">
+      @if (state.devices().length > 1) {
+        <label class="topbar-select">
+          <span>UPS</span>
+          <select
+            [value]="state.selectedDeviceId()"
+            (change)="selectDevice($event)"
+            aria-label="Select UPS device"
+          >
+            @for (device of state.devices(); track device.id) {
+              <option [value]="device.id">
+                {{ device.name }}{{ device.hostName ? ' · ' + device.hostName : '' }}
+              </option>
+            }
+          </select>
+        </label>
+      }
+
+      @if (state.isDemo()) {
+        <label class="topbar-select demo-select">
+          <span>DEMO STATE</span>
+          <select
+            [value]="state.scenario()"
+            (change)="selectScenario($event)"
+            aria-label="Change demo state"
+          >
+            @for (scenario of state.scenarios; track scenario.id) {
+              <option [value]="scenario.id">{{ scenario.label }}</option>
+            }
+          </select>
+        </label>
+      }
+
+      <span
+        class="system-status"
+        [class.status-good]="state.statusTone() === 'good'"
+        [class.status-warning]="state.statusTone() === 'warning'"
+        [class.status-critical]="state.statusTone() === 'critical'"
+        [class.status-muted]="state.statusTone() === 'muted'"
+      >
+        <span class="status-indicator" aria-hidden="true"></span>
+        {{ state.statusText() }}
+      </span>
+
+      @if (auth.authenticated()) {
+        <button class="sign-out-button" type="button" (click)="auth.logout()">Sign out</button>
+      }
+
+      <button
+        class="settings-button"
+        type="button"
+        aria-label="Open settings"
+        (click)="openSettings()"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M12 8.3a3.7 3.7 0 1 0 0 7.4 3.7 3.7 0 0 0 0-7.4Z" />
+          <path
+            d="m19.4 13.5 1.2.9-1.7 3-1.5-.6a7.7 7.7 0 0 1-1.7 1l-.2 1.6h-3.5l-.2-1.6a7.7 7.7 0 0 1-1.7-1l-1.5.6-1.7-3 1.2-.9a7.5 7.5 0 0 1 0-2l-1.2-.9 1.7-3 1.5.6a7.7 7.7 0 0 1 1.7-1l.2-1.6h3.5l.2 1.6a7.7 7.7 0 0 1 1.7 1l1.5-.6 1.7 3-1.2.9a7.5 7.5 0 0 1 0 2Z"
+          />
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <main id="main-content" class="main-content">
+    <router-outlet />
+  </main>
+
+  <dialog #settingsDialog class="settings-dialog" aria-labelledby="settings-title">
+    <div class="dialog-heading">
+      <div>
+        <p class="eyebrow">CONFIGURATION</p>
+        <h2 id="settings-title">Settings</h2>
+      </div>
+      <button
+        class="dialog-close"
+        type="button"
+        aria-label="Close settings"
+        (click)="closeSettings()"
+      >
+        ×
+      </button>
+    </div>
+    <div class="settings-summary">
+      <div class="settings-row">
+        <span>Mode</span>
+        <strong>
+          <span class="demo-dot" aria-hidden="true"></span>
+          {{
+            state.backendMode() === 'none'
+              ? 'No source configured'
+              : state.isDemo()
+                ? 'Demo data'
+                : 'Live host data'
+          }}
+        </strong>
+      </div>
+      <div class="settings-row">
+        <span>Dashboard link</span>
+        <strong>
+          {{ state.apiConnected() ? 'Connected' : 'Reconnecting' }}
+        </strong>
+      </div>
+      <div class="settings-row">
+        <span>Access</span>
+        <strong>Read-only</strong>
+      </div>
+    </div>
+
+    <section class="host-settings" aria-labelledby="hosts-title">
+      <div class="settings-section-heading">
+        <div>
+          <p class="eyebrow">DATA SOURCES</p>
+          <h3 id="hosts-title">NUT hosts</h3>
+        </div>
+      </div>
+
+      @if (state.hosts().length === 0) {
+        <p class="empty-hosts">
+          No hosts configured yet. Add a NUT server to show live UPS readings.
+        </p>
+      } @else {
+        <ul class="host-list">
+          @for (host of state.hosts(); track host.id) {
+            <li class="host-item">
+              <div class="host-copy">
+                <strong>{{ host.name }}</strong>
+                <span>{{
+                  host.sourceType === 'nut' ? hostAddress(host.id) : 'Built-in simulator'
+                }}</span>
+                @if (host.credentialsConfigured) {
+                  <small>Authentication saved</small>
+                }
+                @if (host.sourceType === 'nut') {
+                  <small
+                    class="host-health"
+                    [class.host-health-error]="sourceDiagnostic(host.id)?.status === 'degraded'"
+                    [title]="sourceStatusText(host.id)"
+                  >
+                    {{ sourceStatusText(host.id) }}
+                  </small>
+                }
+              </div>
+              @if (host.sourceType === 'nut') {
+                <div class="host-actions">
+                  <button class="small-button" type="button" (click)="editHost(host.id)">
+                    Edit
+                  </button>
+                  <button
+                    class="small-button remove-button"
+                    type="button"
+                    (click)="removeHost(host.id)"
+                  >
+                    Remove
+                  </button>
+                </div>
+              } @else {
+                <span class="source-tag">Demo</span>
+              }
+            </li>
+          }
+        </ul>
+      }
+
+      <form class="host-form" (ngSubmit)="saveHost()">
+        <h4>{{ editingHostId() ? 'Edit NUT host' : 'Add NUT host' }}</h4>
+        <div class="host-form-grid">
+          <label class="form-field field-wide">
+            <span>Display name</span>
+            <input
+              [(ngModel)]="hostForm.name"
+              name="name"
+              required
+              maxlength="100"
+              autocomplete="off"
+            />
+          </label>
+          <label class="form-field field-wide">
+            <span>Host name or IP address</span>
+            <input
+              [(ngModel)]="hostForm.host"
+              name="host"
+              required
+              maxlength="253"
+              autocomplete="url"
+              placeholder="ups.example.local"
+            />
+          </label>
+          <label class="form-field">
+            <span>Port</span>
+            <input
+              [(ngModel)]="hostForm.port"
+              name="port"
+              required
+              type="number"
+              min="1"
+              max="65535"
+            />
+          </label>
+          <label class="tls-field">
+            <input [(ngModel)]="hostForm.tls" name="tls" type="checkbox" />
+            <span>Use TLS</span>
+          </label>
+          <label class="form-field">
+            <span>Username</span>
+            <input
+              [(ngModel)]="hostForm.username"
+              name="username"
+              autocomplete="username"
+              placeholder="Optional"
+            />
+          </label>
+          <label class="form-field">
+            <span>Password</span>
+            <input
+              [(ngModel)]="hostForm.password"
+              name="password"
+              type="password"
+              autocomplete="new-password"
+              [placeholder]="editingHostHasCredentials() ? 'Leave blank to keep saved' : 'Optional'"
+            />
+          </label>
+        </div>
+        @if (editingHostHasCredentials()) {
+          <label class="clear-credentials">
+            <input
+              [(ngModel)]="hostForm.clearCredentials"
+              name="clearCredentials"
+              type="checkbox"
+            />
+            <span>Remove saved credentials</span>
+          </label>
+        }
+        <p class="form-hint">Volt encrypts saved credentials in the server database.</p>
+        @if (
+          !hostForm.tls && (hostForm.username || hostForm.password || editingHostHasCredentials())
+        ) {
+          <p class="form-warning" role="note">
+            TLS is off. NUT authentication credentials will be sent unencrypted over the network.
+          </p>
+        }
+        @if (hostError()) {
+          <p class="form-error" role="alert">{{ hostError() }}</p>
+        }
+        <div class="host-form-actions">
+          @if (editingHostId()) {
+            <button class="small-button" type="button" (click)="cancelHostEdit()">Cancel</button>
+          }
+          <button class="primary-button" type="submit" [disabled]="hostSaving()">
+            {{ hostSaving() ? 'Saving…' : editingHostId() ? 'Save changes' : 'Add host' }}
+          </button>
+        </div>
+      </form>
+    </section>
+  </dialog>
+}
