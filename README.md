@@ -1,6 +1,6 @@
 # Volt
 
-Volt is a read-only UPS dashboard for homelabs using Network UPS Tools (NUT). It has an Angular 22 frontend and a Node.js, TypeScript and Express backend. Demo mode starts without hardware; NUT hosts can be managed in Settings.
+Volt is a read-only UPS dashboard using Network UPS Tools (NUT). It has an Angular 22 frontend and a Node.js, TypeScript and Express backend. Demo mode starts without hardware; NUT hosts can be managed in Settings.
 
 ## Run Volt locally
 
@@ -29,6 +29,21 @@ The OIDC redirect URI must end in `/api/auth/oidc/callback`. For local developme
 
 When serving Volt over HTTPS, set `AUTH_COOKIE_SECURE=true`; it defaults to true in production and when the OIDC redirect URI uses HTTPS. Password sign-in over plain HTTP exposes the password and session cookie to anyone who can observe that network connection, so use HTTPS outside local development.
 
+## Docker deployment
+
+Copy `.env.example` to `.env`, then set any NUT or authentication options you need. Build and start the container with Docker Compose:
+
+```sh
+cp .env.example .env
+docker compose up -d --build
+```
+
+Open `http://<server>:8080`. The container serves both the Angular app and its API/WebSocket on port 8080. Port 8080 is bound on all interfaces by default; set `VOLT_BIND_ADDRESS=127.0.0.1` in `.env` to limit it to the Docker host, or change `VOLT_PORT` to use another host port. Put Volt behind a TLS reverse proxy for remote access and forward WebSocket upgrades.
+
+Set `NUT_HOST` to a hostname or address reachable from the container. The named `volt-data` volume stores the SQLite database and generated credential-encryption key. `docker compose down` keeps this volume; `docker compose down -v` deletes it. Back up the database and key together. Keep `.env` private; it is ignored by Git.
+
+The container runs as a non-root user with a read-only root filesystem and writes persistent state only under `/data`. Since the container uses production mode, authentication cookies default to `Secure`; if you enable auth while accessing Volt directly over local plain HTTP, set `AUTH_COOKIE_SECURE=false` for that local setup only.
+
 ## Screens
 
 - **Overview** — reported power-flow illustration, battery charge and runtime, history preview, electrical readings and read-only sample variables.
@@ -54,6 +69,6 @@ The workspace uses Angular 22's zoneless change detection. Components keep TypeS
 
 The backend uses Node's built-in `node:sqlite` API with WAL and schema migrations. This API is still marked release candidate in the Node 24 line, so the backend targets Node 24 or newer.
 
-Docker packaging, production hardening and setup screens remain later MVP work. See [docs/VOLT-MVP.md](docs/VOLT-MVP.md) for the requirements and deployment design.
+Further production hardening and setup screens remain later MVP work. See [docs/VOLT-MVP.md](docs/VOLT-MVP.md) for the requirements and deployment design.
 
 Volt does not send UPS commands. Host settings can be changed in the UI; polling intervals, retention and server settings remain environment-configured.

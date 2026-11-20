@@ -17,7 +17,12 @@ export class HistoryChart {
   readonly range = signal<ChartRange>('24h');
   readonly showPrimary = signal(true);
   readonly showVoltage = signal(true);
-  private readonly pointer = signal<{ x: number; y: number } | null>(null);
+  private readonly pointer = signal<{
+    x: number;
+    y: number;
+    tooltipLeft: number;
+    tooltipTop: number;
+  } | null>(null);
   readonly ranges: ChartRange[] = ['1h', '24h', '7d', '30d'];
   private readonly liveUpdates = inject(LiveUpdates);
   private readonly liveHistory = signal<BackendHistory | null>(null);
@@ -83,7 +88,7 @@ export class HistoryChart {
       primaryArea: areaPath(primaryValues, minimum, maximum, primaryXPositions),
       voltageLine: voltageAvailable ? linePath(voltageValues, 225, 235, voltageXPositions) : '',
       leftTicks: primaryTicks(primaryIsPower),
-      xTicks: liveMode ? timeTicksForDomain(timeDomain) : timeTicks(this.range()),
+      xTicks: timeTicksForDomain(timeDomain),
       voltageAvailable,
       voltageSummary: voltageAvailable
         ? 'Input voltage'
@@ -91,9 +96,15 @@ export class HistoryChart {
       summary: chartSummary(primaryValues, primaryIsPower ? 'W' : '%'),
       hover: {
         domain: timeDomain,
-        primary: liveMode ? timedValues(primaryPoints) : valuesAsTimedValues(primaryValues, timeDomain),
-        voltage: liveMode ? timedValues(voltagePoints) : valuesAsTimedValues(voltageValues, timeDomain),
-        bucketMs: history?.bucketMs ?? RANGE_DURATION_MS[this.range()] / Math.max(primaryValues.length - 1, 1),
+        primary: liveMode
+          ? timedValues(primaryPoints)
+          : valuesAsTimedValues(primaryValues, timeDomain),
+        voltage: liveMode
+          ? timedValues(voltagePoints)
+          : valuesAsTimedValues(voltageValues, timeDomain),
+        bucketMs:
+          history?.bucketMs ??
+          RANGE_DURATION_MS[this.range()] / Math.max(primaryValues.length - 1, 1),
       },
       ariaLabel: `${primaryIsPower ? 'Power draw' : 'Load'} history${voltageAvailable ? ' and input voltage' : ''} for ${rangeLabel(this.range())}`,
     };
@@ -108,26 +119,21 @@ export class HistoryChart {
     const primaryValue = valueAtTime(chart.hover.primary, time, chart.hover.bucketMs);
     const voltageValue = valueAtTime(chart.hover.voltage, time, chart.hover.bucketMs);
     if (primaryValue === null && voltageValue === null) return null;
-    const xPercent = (pointer.x / 1000) * 100;
-    const yPercent = (pointer.y / 242) * 100;
     const timeLabel = new Intl.DateTimeFormat(undefined, {
-      dateStyle: 'medium',
+      dateStyle: 'short',
       timeStyle: 'medium',
     }).format(new Date(time));
     const valueFormatter = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
     return {
       x: pointer.x,
-      leftPercent: xPercent,
-      topPercent: yPercent,
-      placeLeft: pointer.x > 760,
-      placeBelow: pointer.y < 80,
+      tooltipLeft: pointer.tooltipLeft,
+      tooltipTop: pointer.tooltipTop,
       time: timeLabel,
       primaryLabel: chart.primaryLabel,
       primaryUnit: chart.primaryUnit,
       primaryValue: primaryValue === null ? '—' : valueFormatter.format(primaryValue),
       voltageValue: voltageValue === null ? '—' : valueFormatter.format(voltageValue),
-      primaryY:
-        primaryValue === null ? null : valuePosition(primaryValue, 0, chart.primaryMaximum),
+      primaryY: primaryValue === null ? null : valuePosition(primaryValue, 0, chart.primaryMaximum),
       voltageY: voltageValue === null ? null : valuePosition(voltageValue, 225, 235),
     };
   });
@@ -142,7 +148,19 @@ export class HistoryChart {
       this.pointer.set(null);
       return;
     }
-    this.pointer.set({ x, y });
+    const tooltipWidth = 220;
+    const tooltipHeight = 54;
+    const localX = event.clientX - bounds.left;
+    const localY = event.clientY - bounds.top;
+    const tooltipLeft = Math.min(
+      Math.max(localX + 12, 8),
+      Math.max(8, bounds.width - tooltipWidth - 8),
+    );
+    const tooltipTop = Math.min(
+      Math.max(localY - tooltipHeight - 12, 4),
+      Math.max(4, bounds.height - tooltipHeight - 4),
+    );
+    this.pointer.set({ x, y, tooltipLeft, tooltipTop });
   }
 
   clearTooltip(): void {
@@ -174,6 +192,11 @@ interface TimeDomain {
   end: number;
 }
 
+interface TimedValue {
+  time: number;
+  value: number;
+}
+
 const RANGE_DURATION_MS: Record<ChartRange, number> = {
   '1h': 60 * 60_000,
   '24h': 24 * 60 * 60_000,
@@ -199,6 +222,19 @@ function validHistoryPoints(points: BackendHistoryPoint[]): BackendHistoryPoint[
   return points.filter(
     (point) => Number.isFinite(Date.parse(point.observedAt)) && Number.isFinite(point.value),
   );
+}
+
+function timedValues(points: BackendHistoryPoint[]): TimedValue[] {
+  return points.map((point) => ({ time: Date.parse(point.observedAt), value: point.value }));
+}
+
+function valuesAsTimedValues(values: Array<number | null>, domain: TimeDomain): TimedValue[] {
+  const duration = domain.end - domain.start;
+  return values.flatMap((value, index) => {
+    if (value === null) return [];
+    const progress = values.length <= 1 ? 0.5 : index / (values.length - 1);
+    return [{ time: domain.start + progress * duration, value }];
+  });
 }
 
 function historyTimeDomain(history: BackendHistory | null, range: ChartRange): TimeDomain {
@@ -253,6 +289,33 @@ function timeTicksForDomain(domain: TimeDomain): Tick[] {
       label: formatter.format(new Date(time)),
     };
   });
+}
+
+function valueAtTime(points: TimedValue[], time: number, bucketMs: number): number | null {
+  if (points.length === 0) return null;
+  if (points.length === 1) {
+    return Math.abs(time - points[0].time) <= Math.max(bucketMs, 60_000) / 2
+      ? points[0].value
+      : null;
+  }
+  if (time < points[0].time || time > points[points.length - 1].time) return null;
+
+  const rightIndex = points.findIndex((point) => point.time >= time);
+  if (rightIndex === 0) return points[0].value;
+  const left = points[rightIndex - 1];
+  const right = points[rightIndex];
+  if (!left || !right) return points[points.length - 1].value;
+  if (Math.abs(right.time - time) < 1) return right.value;
+  const interval = right.time - left.time;
+  if (interval <= 0) return right.value;
+  const progress = (time - left.time) / interval;
+  return left.value + (right.value - left.value) * progress;
+}
+
+function valuePosition(value: number, minimum: number, maximum: number): number {
+  const plotTop = 24;
+  const plotHeight = 166;
+  return Math.round(plotTop + ((maximum - value) / (maximum - minimum)) * plotHeight);
 }
 
 function withTrailingGap(values: number[]): Array<number | null> {
@@ -344,18 +407,6 @@ function primaryTicks(isPower: boolean): Tick[] {
     ? ['400 W', '300 W', '200 W', '100 W', '0 W']
     : ['40%', '30%', '20%', '10%', '0%'];
   return labels.map((label, index) => ({ x: 58, y: 26 + index * 41, label }));
-}
-
-function timeTicks(range: ChartRange): Tick[] {
-  const labels: Record<ChartRange, string[]> = {
-    '1h': ['−60m', '−50m', '−40m', '−30m', '−20m', '−10m', 'now'],
-    '24h': ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00', '24:00'],
-    '7d': ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-    '30d': ['1', '6', '12', '18', '24', '30'],
-  };
-  const values = labels[range];
-  const spacing = 864 / (values.length - 1);
-  return values.map((label, index) => ({ x: 68 + index * spacing, y: 218, label }));
 }
 
 function chartSummary(values: Array<number | null>, unit: string): string {

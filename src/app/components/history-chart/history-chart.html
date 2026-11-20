@@ -56,6 +56,8 @@
         viewBox="0 0 1000 242"
         role="img"
         [attr.aria-label]="chart().ariaLabel"
+        (pointermove)="moveTooltip($event)"
+        (pointerleave)="clearTooltip()"
       >
         <title>{{ chart().ariaLabel }}</title>
         <defs>
@@ -102,7 +104,46 @@
         @if (showVoltage() && chart().voltageAvailable) {
           <path class="line-series voltage-series" [attr.d]="chart().voltageLine" />
         }
+        @if (hoverInfo(); as hover) {
+          <line class="hover-crosshair" [attr.x1]="hover.x" [attr.x2]="hover.x" y1="24" y2="190" />
+          @if (showPrimary() && hover.primaryY !== null) {
+            <circle
+              class="hover-point hover-point-primary"
+              [class.battery-series]="snapshot().flow === 'battery'"
+              [attr.cx]="hover.x"
+              [attr.cy]="hover.primaryY"
+              r="4"
+            />
+          }
+          @if (showVoltage() && hover.voltageY !== null) {
+            <circle
+              class="hover-point hover-point-voltage"
+              [attr.cx]="hover.x"
+              [attr.cy]="hover.voltageY"
+              r="4"
+            />
+          }
+        }
       </svg>
+      @if (hoverInfo(); as hover) {
+        <div
+          class="chart-tooltip"
+          [style.left.px]="hover.tooltipLeft"
+          [style.top.px]="hover.tooltipTop"
+        >
+          <time>{{ hover.time }}</time>
+          <span class="tooltip-reading">
+            <i class="tooltip-swatch power-swatch" aria-hidden="true"></i>
+            {{ hover.primaryLabel }}
+            <strong>{{ hover.primaryValue }} {{ hover.primaryUnit }}</strong>
+          </span>
+          <span class="tooltip-reading">
+            <i class="tooltip-swatch voltage-swatch" aria-hidden="true"></i>
+            Input voltage
+            <strong>{{ hover.voltageValue }} V</strong>
+          </span>
+        </div>
+      }
     </div>
   }
 
