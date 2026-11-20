@@ -1,6 +1,11 @@
 import { connect as connectTls, checkServerIdentity, type TLSSocket } from 'node:tls';
 import { createConnection, isIP, type Socket } from 'node:net';
-import { createInterface, type Interface } from 'node:readline';
+
+const MAX_NUT_LINE_BYTES = 48 * 1024;
+const MAX_NUT_LINE_CHARACTERS = 16_384;
+const MAX_NUT_LIST_RESPONSE_BYTES = 1024 * 1024;
+const MAX_NUT_LIST_ROWS = 10_000;
+const MAX_NUT_LIST_DURATION_MS = 30_000;
 
 export interface NutUps {
   name: string;
@@ -19,8 +24,8 @@ export class NutProtocolError extends Error {
 
 export class NutConnection {
   private socket: Socket | TLSSocket;
-  private lines!: Interface;
-  private lineIterator!: AsyncIterator<string>;
+  private lineIterator!: NodeJS.AsyncIterator<Buffer>;
+  private pendingData: Buffer = Buffer.alloc(0);
   private socketError: Error | null = null;
 
   private constructor(
@@ -85,19 +90,19 @@ export class NutConnection {
   }
 
   close(): void {
-    this.lines.close();
     this.socket.destroy();
   }
 
   private async startTls(host: string): Promise<void> {
     this.socket.write('STARTTLS\n');
     const response = await this.readLine();
-    if (response !== 'OK STARTTLS') {
+    if (response.line !== 'OK STARTTLS') {
       throw new NutProtocolError('NUT server did not accept STARTTLS');
     }
 
-    this.lines.close();
-    this.socket.setEncoding();
+    await this.lineIterator.return?.();
+    if (this.pendingData.length > 0) this.socket.unshift(this.pendingData);
+    this.pendingData = Buffer.alloc(0);
     const tlsSocket = connectTls({
       socket: this.socket,
       rejectUnauthorized: true,
@@ -126,19 +131,18 @@ export class NutConnection {
 
   private async expectOk(command: string): Promise<void> {
     const response = await this.readLine();
-    if (response !== 'OK' && !response.startsWith('OK ')) {
+    if (response.line !== 'OK' && !response.line.startsWith('OK ')) {
       throw new NutProtocolError(`NUT rejected ${command}`, 'AUTH_FAILED');
     }
   }
 
   private attachReader(socket: Socket | TLSSocket): void {
-    socket.setEncoding('utf8');
     socket.setTimeout(this.timeoutMs, () => socket.destroy(new Error('NUT request timed out')));
     socket.on('error', (error: Error) => {
       this.socketError = error;
     });
-    this.lines = createInterface({ input: socket, crlfDelay: Infinity });
-    this.lineIterator = this.lines[Symbol.asyncIterator]();
+    this.pendingData = Buffer.alloc(0);
+    this.lineIterator = socket.iterator({ destroyOnReturn: false }) as NodeJS.AsyncIterator<Buffer>;
   }
 
   private async list(query: string): Promise<string[]> {
@@ -146,7 +150,9 @@ export class NutConnection {
     const expectedEnd = `END LIST ${query}`;
     this.socket.write(`LIST ${query}\n`);
 
-    const firstLine = await this.readLine();
+    const deadline = Date.now() + Math.min(this.timeoutMs * 5, MAX_NUT_LIST_DURATION_MS);
+    const firstResponse = await this.readLine(deadline);
+    const firstLine = firstResponse.line;
     if (firstLine.startsWith('ERR ')) {
       const code = firstLine.slice(4).trim().split(/\s+/, 1)[0] ?? 'SERVER_ERROR';
       throw new NutProtocolError(`NUT rejected LIST ${query}`, code);
@@ -156,28 +162,82 @@ export class NutConnection {
     }
 
     const result: string[] = [];
-    while (result.length <= 100_000) {
-      const line = await this.readLine();
-      if (line === expectedEnd) return result;
-      if (line.length > 16_384) throw new NutProtocolError('NUT response line is too long');
-      result.push(line);
+    let responseBytes = firstResponse.bytes;
+    if (responseBytes > MAX_NUT_LIST_RESPONSE_BYTES) {
+      throw new NutProtocolError('NUT list response exceeded the byte limit');
     }
-    throw new NutProtocolError('NUT list exceeded the row limit');
+    while (true) {
+      const response = await this.readLine(deadline);
+      responseBytes += response.bytes;
+      if (responseBytes > MAX_NUT_LIST_RESPONSE_BYTES) {
+        throw new NutProtocolError('NUT list response exceeded the byte limit');
+      }
+      if (response.line === expectedEnd) return result;
+      if (result.length >= MAX_NUT_LIST_ROWS) {
+        throw new NutProtocolError('NUT list exceeded the row limit');
+      }
+      result.push(response.line);
+    }
   }
 
-  private async readLine(): Promise<string> {
-    let timeout: NodeJS.Timeout | undefined;
-    try {
-      const result = await Promise.race([
-        this.lineIterator.next(),
-        new Promise<never>((_, reject) => {
-          timeout = setTimeout(() => reject(new Error('NUT response timed out')), this.timeoutMs);
-        }),
-      ]);
+  private async readLine(
+    deadline = Date.now() + this.timeoutMs,
+  ): Promise<{ line: string; bytes: number }> {
+    let lineBuffer = Buffer.allocUnsafe(256);
+    let lineBytes = 0;
+    const append = (segment: Buffer): void => {
+      const nextLength = lineBytes + segment.length;
+      if (nextLength > MAX_NUT_LINE_BYTES) {
+        throw new NutProtocolError('NUT response line is too long');
+      }
+      if (nextLength > lineBuffer.length) {
+        const capacity = Math.min(MAX_NUT_LINE_BYTES, Math.max(nextLength, lineBuffer.length * 2));
+        const expanded = Buffer.allocUnsafe(capacity);
+        lineBuffer.copy(expanded, 0, 0, lineBytes);
+        lineBuffer = expanded;
+      }
+      segment.copy(lineBuffer, lineBytes);
+      lineBytes = nextLength;
+    };
+
+    while (true) {
+      if (Date.now() >= deadline) throw new Error('NUT response timed out');
+      const newlineIndex = this.pendingData.indexOf(0x0a);
+      if (newlineIndex >= 0) {
+        const segment = this.pendingData.subarray(0, newlineIndex);
+        append(segment);
+        this.pendingData = this.pendingData.subarray(newlineIndex + 1);
+
+        const contentLength =
+          lineBytes > 0 && lineBuffer[lineBytes - 1] === 0x0d ? lineBytes - 1 : lineBytes;
+        const line = lineBuffer.toString('utf8', 0, contentLength);
+        if (line.length > MAX_NUT_LINE_CHARACTERS) {
+          throw new NutProtocolError('NUT response line is too long');
+        }
+        return { line, bytes: lineBytes + 1 };
+      }
+
+      if (this.pendingData.length > 0) {
+        append(this.pendingData);
+        this.pendingData = Buffer.alloc(0);
+      }
+
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) throw new Error('NUT response timed out');
+      let timeout: NodeJS.Timeout | undefined;
+      let result: IteratorResult<Buffer>;
+      try {
+        result = await Promise.race([
+          this.lineIterator.next(),
+          new Promise<never>((_, reject) => {
+            timeout = setTimeout(() => reject(new Error('NUT response timed out')), remainingMs);
+          }),
+        ]);
+      } finally {
+        if (timeout) clearTimeout(timeout);
+      }
       if (result.done) throw this.socketError ?? new Error('NUT closed the connection');
-      return result.value;
-    } finally {
-      if (timeout) clearTimeout(timeout);
+      this.pendingData = result.value;
     }
   }
 }

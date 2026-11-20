@@ -1,4 +1,5 @@
 import { dirname, isAbsolute, resolve } from 'node:path';
+import { isIP } from 'node:net';
 import { fileURLToPath } from 'node:url';
 
 const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -24,6 +25,7 @@ export interface AppConfig {
   databasePath: string;
   webDistDir: string;
   webOrigins: ReadonlySet<string>;
+  trustedProxyCidrs: readonly string[];
   auth: {
     enabled: boolean;
     email: string | null;
@@ -74,6 +76,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       .map((origin) => origin.trim())
       .filter(Boolean),
   );
+  const trustedProxyCidrs = parseTrustedProxyCidrs(env['TRUSTED_PROXY_CIDRS']);
   const authEmail = nonEmpty(env['AUTH_EMAIL'])?.toLowerCase() ?? null;
   const authPassword =
     env['AUTH_PASSWORD'] && env['AUTH_PASSWORD'].length > 0 ? env['AUTH_PASSWORD'] : null;
@@ -185,6 +188,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     databasePath,
     webDistDir: resolveFromProject(nonEmpty(env['WEB_DIST_DIR']) ?? 'dist/volt/browser'),
     webOrigins,
+    trustedProxyCidrs,
     auth: {
       enabled: Boolean(authEmail && (authPassword || oidc)),
       email: authEmail,
@@ -216,6 +220,29 @@ function resolveFromProject(path: string): string {
 function nonEmpty(value: string | undefined): string | undefined {
   const normalized = value?.trim();
   return normalized ? normalized : undefined;
+}
+
+function parseTrustedProxyCidrs(value: string | undefined): string[] {
+  const entries = (value ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  for (const entry of entries) {
+    const [address, prefix, ...extra] = entry.split('/');
+    const ipVersion = address ? isIP(address) : 0;
+    const maxPrefix = ipVersion === 4 ? 32 : 128;
+    if (
+      ipVersion === 0 ||
+      extra.length > 0 ||
+      (prefix !== undefined &&
+        (!/^\d+$/.test(prefix) || Number(prefix) === 0 || Number(prefix) > maxPrefix))
+    ) {
+      throw new Error('TRUSTED_PROXY_CIDRS must contain valid IP addresses or CIDRs');
+    }
+  }
+
+  return [...new Set(entries)];
 }
 
 function parseBoolean(value: string | undefined, fallback: boolean, name: string): boolean {

@@ -56,6 +56,9 @@ export function createApp({
   alertService,
 }: ApiDependencies): Express {
   const app = express();
+  if (config.trustedProxyCidrs.length > 0) {
+    app.set('trust proxy', [...config.trustedProxyCidrs]);
+  }
   app.disable('x-powered-by');
   app.use(noCache);
   app.use(cors(config));
