@@ -2,9 +2,7 @@
 
 Volt is a read-only UPS dashboard using Network UPS Tools (NUT). It has an Angular 22 frontend and a Node.js, TypeScript and Express backend. Demo mode starts without hardware; NUT hosts can be managed in Settings.
 
-
 ![image](./public/assets/screen.png)
-
 
 ## Run Volt locally
 
@@ -21,9 +19,9 @@ pnpm start
 
 Open [http://localhost:4200](http://localhost:4200). The frontend connects to the backend at `http://localhost:8080` through the Angular development proxy. Demo mode is enabled by default and stores data in `.data/volt.sqlite`.
 
-Open Settings to add, edit or remove NUT hosts. Each host has a display name, address, port and TLS option. Authentication works with or without TLS. Without TLS, NUT sends the username and password unencrypted over the network; Volt still encrypts saved credentials in SQLite, and never returns them from the API. By default, Volt creates `.data/credentials.key` with owner-only file permissions; back it up separately from the database. You can instead set `CREDENTIALS_ENCRYPTION_KEY` to a 32-byte hex or base64 key managed by your deployment. The environment variables `NUT_HOST`, `NUT_PORT`, `NUT_TLS`, `NUT_USERNAME` and `NUT_PASSWORD` remain available to provision one host at server startup.
+Open Settings to add, edit or remove NUT hosts and configure alerts. Each host has a display name, address, port and TLS option. Authentication works with or without TLS. Without TLS, NUT sends the username and password unencrypted over the network; Volt still encrypts saved credentials in SQLite, and never returns them from the API. Pushover alerts use its HTTPS message API; email alerts use an SMTP server you configure. Authenticated SMTP requires STARTTLS unless implicit TLS is selected. Alert rules cover battery power, low battery, low runtime, and connection loss or recovery, with test buttons for each enabled channel. Provider secrets are encrypted in SQLite and never returned by the API. By default, Volt creates `.data/credentials.key` with owner-only file permissions; back it up separately from the database. You can instead set `CREDENTIALS_ENCRYPTION_KEY` to a 32-byte hex or base64 key managed by your deployment. The environment variables `NUT_HOST`, `NUT_PORT`, `NUT_TLS`, `NUT_USERNAME` and `NUT_PASSWORD` remain available to provision one host at server startup.
 
-The API exposes host management, collector types, device snapshots, bounded history, paginated events and `WebSocket /api/ws`. `GET /api/health` reports per-source diagnostics; `GET /api/hosts/:id/health` returns one host's connection phase, discovered UPS names, last poll and error code. The UI distinguishes devices by host and updates as collectors discover or lose UPS devices. NUT and demo collectors are implemented; MQTT, Home Assistant and UniFi UPS HTTP are listed as future source types. Adding the first NUT host replaces the demo source. The demo state selector controls the backend simulator while it is connected, and continues using local fixtures if the server is unavailable.
+The API exposes host management, collector types, device snapshots, bounded history, paginated events, alert settings and test delivery, and `WebSocket /api/ws`. `GET /api/health` reports per-source diagnostics; `GET /api/hosts/:id/health` returns one host's connection phase, discovered UPS names, last poll and error code. The UI distinguishes devices by host and updates as collectors discover or lose UPS devices. NUT and demo collectors are implemented; MQTT, Home Assistant and UniFi UPS HTTP are listed as future source types. Adding the first NUT host replaces the demo source. The demo state selector controls the backend simulator while it is connected, and continues using local fixtures if the server is unavailable.
 
 ## Optional sign-in
 
@@ -44,7 +42,7 @@ docker compose up -d --build
 
 Open `http://<server>:8080`. The container serves both the Angular app and its API/WebSocket on port 8080. Port 8080 is bound on all interfaces by default; set `VOLT_BIND_ADDRESS=127.0.0.1` in `.env` to limit it to the Docker host, or change `VOLT_PORT` to use another host port. Put Volt behind a TLS reverse proxy for remote access and forward WebSocket upgrades.
 
-Set `NUT_HOST` to a hostname or address reachable from the container. The named `volt-data` volume stores the SQLite database and generated credential-encryption key. `docker compose down` keeps this volume; `docker compose down -v` deletes it. Back up the database and key together. Keep `.env` private; it is ignored by Git.
+Set `NUT_HOST` to a hostname or address reachable from the container. The named `volt-data` volume stores the SQLite database and generated credential-encryption key. `docker compose down` keeps this volume; `docker compose down -v` deletes it. Back up the database and key together. For notifications, allow the container to reach Pushover over HTTPS or the SMTP host and port you configure in Settings. Keep `.env` private; it is ignored by Git.
 
 The container runs as a non-root user with a read-only root filesystem and writes persistent state only under `/data`. Since the container uses production mode, authentication cookies default to `Secure`; if you enable auth while accessing Volt directly over local plain HTTP, set `AUTH_COOKIE_SECURE=false` for that local setup only.
 

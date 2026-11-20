@@ -334,5 +334,297 @@
         </div>
       </form>
     </section>
+
+    <section class="alert-settings" aria-labelledby="alerts-title">
+      <div class="settings-section-heading">
+        <div>
+          <p class="eyebrow">NOTIFICATIONS</p>
+          <h3 id="alerts-title">Alerts</h3>
+        </div>
+      </div>
+
+      @if (alertLoading()) {
+        <p class="form-hint" role="status">Loading alert settings…</p>
+      } @else if (alertSettings()) {
+        <form class="alert-form" (ngSubmit)="saveAlertSettings()">
+          <div class="alert-subsection">
+            <h4>Notify me when</h4>
+            <div class="alert-rules">
+              <label class="alert-toggle">
+                <input
+                  [(ngModel)]="alertForm.rules.onBattery"
+                  name="alertOnBattery"
+                  type="checkbox"
+                />
+                <span>UPS switches to battery power</span>
+              </label>
+              <label class="alert-toggle">
+                <input
+                  [(ngModel)]="alertForm.rules.powerRestored"
+                  name="alertPowerRestored"
+                  type="checkbox"
+                />
+                <span>Utility power is restored</span>
+              </label>
+              <label class="alert-toggle">
+                <input
+                  [(ngModel)]="alertForm.rules.lowBattery"
+                  name="alertLowBattery"
+                  type="checkbox"
+                />
+                <span>UPS reports low battery</span>
+              </label>
+              <label class="alert-toggle">
+                <input
+                  [(ngModel)]="alertForm.rules.lowBatteryRestored"
+                  name="alertLowBatteryRestored"
+                  type="checkbox"
+                />
+                <span>Low-battery warning clears</span>
+              </label>
+              <label class="alert-toggle">
+                <input
+                  [(ngModel)]="alertForm.rules.connectionLost"
+                  name="alertConnectionLost"
+                  type="checkbox"
+                />
+                <span>UPS connection is lost</span>
+              </label>
+              <label class="alert-toggle">
+                <input
+                  [(ngModel)]="alertForm.rules.connectionRestored"
+                  name="alertConnectionRestored"
+                  type="checkbox"
+                />
+                <span>UPS connection is restored</span>
+              </label>
+            </div>
+            <div class="runtime-alert-row">
+              <label class="alert-toggle">
+                <input
+                  [(ngModel)]="alertForm.rules.lowRuntime"
+                  name="alertLowRuntime"
+                  type="checkbox"
+                />
+                <span>Remaining runtime drops below</span>
+              </label>
+              <label class="form-field runtime-threshold">
+                <span>Minutes</span>
+                <input
+                  [(ngModel)]="alertForm.rules.runtimeThresholdMinutes"
+                  name="runtimeThresholdMinutes"
+                  type="number"
+                  min="1"
+                  max="1440"
+                  required
+                />
+              </label>
+            </div>
+          </div>
+
+          <div class="alert-subsection">
+            <div class="alert-provider-heading">
+              <h4>Pushover</h4>
+              @if (alertSettings()!.pushover.configured) {
+                <span class="configured-tag">Credentials saved</span>
+              }
+            </div>
+            <label class="alert-toggle provider-toggle">
+              <input
+                [(ngModel)]="alertForm.pushover.enabled"
+                name="pushoverEnabled"
+                type="checkbox"
+              />
+              <span>Send alerts through Pushover</span>
+            </label>
+            <div class="host-form-grid">
+              <label class="form-field">
+                <span>Application API token</span>
+                <input
+                  [(ngModel)]="alertForm.pushover.apiToken"
+                  name="pushoverApiToken"
+                  type="password"
+                  autocomplete="new-password"
+                  [placeholder]="
+                    alertSettings()!.pushover.configured
+                      ? 'Saved securely · leave blank to keep'
+                      : 'Required to enable Pushover'
+                  "
+                />
+              </label>
+              <label class="form-field">
+                <span>User or group key</span>
+                <input
+                  [(ngModel)]="alertForm.pushover.userKey"
+                  name="pushoverUserKey"
+                  type="password"
+                  autocomplete="new-password"
+                  [placeholder]="
+                    alertSettings()!.pushover.configured
+                      ? 'Saved securely · leave blank to keep'
+                      : 'Required to enable Pushover'
+                  "
+                />
+              </label>
+            </div>
+            @if (alertSettings()!.pushover.configured) {
+              <label class="clear-credentials">
+                <input
+                  [(ngModel)]="alertForm.pushover.clearCredentials"
+                  name="clearPushoverCredentials"
+                  type="checkbox"
+                />
+                <span>Remove saved Pushover credentials</span>
+              </label>
+            }
+            <div class="alert-provider-actions">
+              <button
+                class="small-button"
+                type="button"
+                [disabled]="alertSaving() || alertTesting() !== null"
+                (click)="testAlert('pushover')"
+              >
+                {{ alertTesting() === 'pushover' ? 'Sending…' : 'Send test' }}
+              </button>
+            </div>
+          </div>
+
+          <div class="alert-subsection">
+            <div class="alert-provider-heading">
+              <h4>Email</h4>
+              @if (alertSettings()!.email.configured) {
+                <span class="configured-tag">SMTP configured</span>
+              }
+            </div>
+            <label class="alert-toggle provider-toggle">
+              <input [(ngModel)]="alertForm.email.enabled" name="emailEnabled" type="checkbox" />
+              <span>Send alerts by email</span>
+            </label>
+            <div class="host-form-grid">
+              <label class="form-field field-wide">
+                <span>SMTP host</span>
+                <input
+                  [(ngModel)]="alertForm.email.host"
+                  name="smtpHost"
+                  [required]="alertForm.email.enabled"
+                  maxlength="253"
+                  autocomplete="url"
+                  placeholder="mail.example.com"
+                />
+              </label>
+              <label class="form-field">
+                <span>Port</span>
+                <input
+                  [(ngModel)]="alertForm.email.port"
+                  name="smtpPort"
+                  type="number"
+                  min="1"
+                  max="65535"
+                  required
+                />
+              </label>
+              <label class="tls-field">
+                <input [(ngModel)]="alertForm.email.secure" name="smtpSecure" type="checkbox" />
+                <span>Use implicit TLS (usually port 465)</span>
+              </label>
+              <label class="form-field">
+                <span>SMTP username</span>
+                <input
+                  [(ngModel)]="alertForm.email.username"
+                  name="smtpUsername"
+                  maxlength="254"
+                  autocomplete="username"
+                  [placeholder]="
+                    alertSettings()!.email.usernameConfigured
+                      ? 'Saved securely · leave blank to keep'
+                      : 'Optional'
+                  "
+                />
+              </label>
+              <label class="form-field">
+                <span>SMTP password</span>
+                <input
+                  [(ngModel)]="alertForm.email.password"
+                  name="smtpPassword"
+                  type="password"
+                  autocomplete="new-password"
+                  [placeholder]="
+                    alertSettings()!.email.credentialsConfigured
+                      ? 'Saved securely · leave blank to keep'
+                      : 'Optional'
+                  "
+                />
+              </label>
+              <label class="form-field">
+                <span>From address</span>
+                <input
+                  [(ngModel)]="alertForm.email.from"
+                  name="emailFrom"
+                  type="email"
+                  [required]="alertForm.email.enabled"
+                  maxlength="254"
+                  autocomplete="email"
+                  placeholder="volt@example.com"
+                />
+              </label>
+              <label class="form-field">
+                <span>Send alerts to</span>
+                <input
+                  [(ngModel)]="alertForm.email.to"
+                  name="emailTo"
+                  type="email"
+                  [required]="alertForm.email.enabled"
+                  maxlength="254"
+                  autocomplete="email"
+                  placeholder="you@example.com"
+                />
+              </label>
+            </div>
+            @if (
+              alertSettings()!.email.usernameConfigured ||
+              alertSettings()!.email.credentialsConfigured
+            ) {
+              <label class="clear-credentials">
+                <input
+                  [(ngModel)]="alertForm.email.clearCredentials"
+                  name="clearEmailCredentials"
+                  type="checkbox"
+                />
+                <span>Remove saved SMTP password</span>
+              </label>
+            }
+            <p class="form-hint">
+              SMTP passwords and Pushover credentials are encrypted in Volt’s database. SMTP
+              authentication uses TLS when available; authenticated connections require TLS.
+            </p>
+            <div class="alert-provider-actions">
+              <button
+                class="small-button"
+                type="button"
+                [disabled]="alertSaving() || alertTesting() !== null"
+                (click)="testAlert('email')"
+              >
+                {{ alertTesting() === 'email' ? 'Sending…' : 'Send test' }}
+              </button>
+            </div>
+          </div>
+
+          @if (alertError()) {
+            <p class="form-error" role="alert">{{ alertError() }}</p>
+          }
+          @if (alertNotice()) {
+            <p class="form-success" role="status">{{ alertNotice() }}</p>
+          }
+          <div class="host-form-actions">
+            <button class="primary-button" type="submit" [disabled]="alertSaving()">
+              {{ alertSaving() ? 'Saving…' : 'Save alert settings' }}
+            </button>
+          </div>
+        </form>
+      } @else if (alertError()) {
+        <p class="form-error" role="alert">{{ alertError() }}</p>
+        <button class="small-button" type="button" (click)="loadAlertSettings()">Try again</button>
+      }
+    </section>
   </dialog>
 }

@@ -472,6 +472,21 @@ export class Store {
     return row.count;
   }
 
+  getAppSetting(key: string): string | null {
+    const row = this.database.prepare('SELECT value FROM app_settings WHERE key = ?').get(key) as
+      { value: string } | undefined;
+    return row?.value ?? null;
+  }
+
+  setAppSetting(key: string, value: string): void {
+    this.database
+      .prepare(
+        `INSERT INTO app_settings(key, value) VALUES (?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      )
+      .run(key, value);
+  }
+
   private migrate(): void {
     this.database.exec(
       'CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL) STRICT;',
@@ -489,6 +504,7 @@ export class Store {
     }
 
     if (this.schemaVersion() < 2) this.migrateHosts();
+    if (this.schemaVersion() < 3) this.migrateAppSettings();
   }
 
   private schemaVersion(): number {
@@ -538,6 +554,20 @@ export class Store {
         CREATE INDEX devices_host_name ON devices(host_id, ups_name COLLATE NOCASE);
       `);
       this.recordMigration(2);
+      this.database.exec('COMMIT');
+    } catch (error) {
+      this.database.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  private migrateAppSettings(): void {
+    this.database.exec('BEGIN IMMEDIATE');
+    try {
+      this.database.exec(
+        'CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;',
+      );
+      this.recordMigration(3);
       this.database.exec('COMMIT');
     } catch (error) {
       this.database.exec('ROLLBACK');

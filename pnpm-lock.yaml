@@ -259,6 +259,9 @@ importers:
       express:
         specifier: ^5.1.0
         version: 5.3.0(supports-color@8.1.1)
+      nodemailer:
+        specifier: ^10.6.0
+        version: 10.6.0
       ws:
         specifier: ^8.18.3
         version: 8.23.0
@@ -269,6 +272,9 @@ importers:
       '@types/node':
         specifier: ^24.3.0
         version: 24.19.2
+      '@types/nodemailer':
+        specifier: ^8.0.2
+        version: 8.0.2
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.2
@@ -2039,6 +2045,12 @@ packages:
         integrity: sha512-93d49wCWJkCyN87MxLpNN6KXPCwFw7bVUg79mGUV1OS40JGWwVCr8n61DXCSqz7CV6/VfPkb7xec7uP2M+QHWQ==,
       }
 
+  '@types/nodemailer@8.0.2':
+    resolution:
+      {
+        integrity: sha512-c7M5ox8p0nEOfbJ2E9Qcmt8/QCu/VzsiAhzBiZbvky2PhKZDHpKB3sQHBM5MEZNkCfBOaS6S9//AGPRTNB7IaA==,
+      }
+
   '@types/qs@6.15.1':
     resolution:
       {
@@ -3156,6 +3168,13 @@ packages:
         integrity: sha512-6li2QanLsAXpIH2R6j77MzRyvOyrvdTqlKtO4CgBdHGNvN99ZZfyxszHc5o5+IZBWD5u6Hzwg83JoGXmqZNG9Q==,
       }
     engines: { node: '>=18' }
+
+  nodemailer@10.6.0:
+    resolution:
+      {
+        integrity: sha512-jWanL7D9GD3jvUDYKmoC5rWTiG8MnBgnN2yV68bgMKip1zUJhiSTyz7Eg+18y8sk5OvdVDzws5nZK5arSI4f5Q==,
+      }
+    engines: { node: '>=20.0.0' }
 
   npm-package-arg@14.0.0:
     resolution:
@@ -5080,6 +5099,10 @@ snapshots:
     dependencies:
       undici-types: 7.24.6
 
+  '@types/nodemailer@8.0.2':
+    dependencies:
+      '@types/node': 24.19.2
+
   '@types/qs@6.15.1': {}
 
   '@types/range-parser@1.2.7': {}
@@ -5727,6 +5750,8 @@ snapshots:
     optional: true
 
   node-releases@2.0.63: {}
+
+  nodemailer@10.6.0: {}
 
   npm-package-arg@14.0.0:
     dependencies:

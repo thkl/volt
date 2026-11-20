@@ -8,6 +8,7 @@ import { createDefaultCollectorRegistry } from './collector/registry.js';
 import { encryptCredentials } from './security/credentials.js';
 import { loadOrCreateCredentialKey } from './security/key-store.js';
 import { AuthManager } from './auth/auth-manager.js';
+import { AlertService } from './alerts/alert-service.js';
 
 export interface VoltServer {
   readonly httpServer: Server;
@@ -44,6 +45,7 @@ export function createVoltServer(config: AppConfig): VoltServer {
 
   const registry = createDefaultCollectorRegistry();
   const collector = new HostManager(store, config, credentialKey, registry);
+  const alertService = new AlertService(store, credentialKey, collector);
   const authManager = new AuthManager(config);
   const app = createApp({
     config,
@@ -51,6 +53,7 @@ export function createVoltServer(config: AppConfig): VoltServer {
     collector,
     collectorTypes: registry.catalog(),
     authManager,
+    alertService,
   });
   const httpServer = createServer(app);
   const websocketHub = new WebSocketHub(httpServer, config, store, collector, authManager);
@@ -70,6 +73,7 @@ export function createVoltServer(config: AppConfig): VoltServer {
       }),
     close: async () => {
       clearInterval(retentionTimer);
+      alertService.close();
       collector.stop();
       websocketHub.close();
       await new Promise<void>((resolve, reject) => {

@@ -12,7 +12,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthState } from './auth-state';
 import { DemoState } from './demo-state';
-import { LiveUpdates, NutHostForm } from './live-updates';
+import { AlertSettings, AlertSettingsForm, LiveUpdates, NutHostForm } from './live-updates';
 import type { SourceDiagnostic } from './demo-state';
 
 @Component({
@@ -29,7 +29,14 @@ export class App implements OnInit, OnDestroy {
   readonly hostSaving = signal(false);
   readonly hostError = signal('');
   readonly editingHostId = signal<string | null>(null);
+  readonly alertSettings = signal<AlertSettings | null>(null);
+  readonly alertLoading = signal(false);
+  readonly alertSaving = signal(false);
+  readonly alertTesting = signal<'pushover' | 'email' | null>(null);
+  readonly alertError = signal('');
+  readonly alertNotice = signal('');
   hostForm: NutHostForm = emptyHostForm();
+  alertForm: AlertSettingsForm = emptyAlertForm();
   loginEmail = '';
   loginPassword = '';
 
@@ -68,10 +75,64 @@ export class App implements OnInit, OnDestroy {
 
   openSettings(): void {
     this.settingsDialog()?.nativeElement.showModal();
+    if (!this.alertSettings() && !this.alertLoading()) void this.loadAlertSettings();
   }
 
   closeSettings(): void {
     this.settingsDialog()?.nativeElement.close();
+  }
+
+  async loadAlertSettings(): Promise<void> {
+    this.alertLoading.set(true);
+    this.alertError.set('');
+    try {
+      const settings = await this.liveUpdates.getAlertSettings();
+      this.alertSettings.set(settings);
+      this.alertForm = formFromAlertSettings(settings);
+    } catch (error) {
+      this.alertError.set(
+        error instanceof Error ? error.message : 'Alert settings could not be loaded',
+      );
+    } finally {
+      this.alertLoading.set(false);
+    }
+  }
+
+  async saveAlertSettings(showNotice = true): Promise<boolean> {
+    this.alertSaving.set(true);
+    this.alertError.set('');
+    this.alertNotice.set('');
+    try {
+      const settings = await this.liveUpdates.saveAlertSettings(this.alertForm);
+      this.alertSettings.set(settings);
+      this.alertForm = formFromAlertSettings(settings);
+      if (showNotice) this.alertNotice.set('Alert settings saved.');
+      return true;
+    } catch (error) {
+      this.alertError.set(
+        error instanceof Error ? error.message : 'Alert settings could not be saved',
+      );
+      return false;
+    } finally {
+      this.alertSaving.set(false);
+    }
+  }
+
+  async testAlert(channel: 'pushover' | 'email'): Promise<void> {
+    if (!(await this.saveAlertSettings(false))) return;
+    this.alertTesting.set(channel);
+    this.alertError.set('');
+    this.alertNotice.set('');
+    try {
+      await this.liveUpdates.sendAlertTest(channel);
+      this.alertNotice.set(`Test ${channel === 'email' ? 'email' : 'Pushover message'} sent.`);
+    } catch (error) {
+      this.alertError.set(
+        error instanceof Error ? error.message : 'The test alert could not be delivered',
+      );
+    } finally {
+      this.alertTesting.set(null);
+    }
   }
 
   editHost(hostId: string): void {
@@ -168,5 +229,55 @@ function emptyHostForm(): NutHostForm {
     username: '',
     password: '',
     clearCredentials: false,
+  };
+}
+
+function emptyAlertForm(): AlertSettingsForm {
+  return {
+    rules: {
+      onBattery: true,
+      powerRestored: true,
+      lowBattery: true,
+      lowBatteryRestored: true,
+      lowRuntime: false,
+      runtimeThresholdMinutes: 10,
+      connectionLost: true,
+      connectionRestored: true,
+    },
+    pushover: { enabled: false, apiToken: '', userKey: '', clearCredentials: false },
+    email: {
+      enabled: false,
+      host: '',
+      port: 587,
+      secure: false,
+      username: '',
+      password: '',
+      from: '',
+      to: '',
+      clearCredentials: false,
+    },
+  };
+}
+
+function formFromAlertSettings(settings: AlertSettings): AlertSettingsForm {
+  return {
+    rules: { ...settings.rules },
+    pushover: {
+      enabled: settings.pushover.enabled,
+      apiToken: '',
+      userKey: '',
+      clearCredentials: false,
+    },
+    email: {
+      enabled: settings.email.enabled,
+      host: settings.email.host,
+      port: settings.email.port,
+      secure: settings.email.secure,
+      username: '',
+      password: '',
+      from: settings.email.from,
+      to: settings.email.to,
+      clearCredentials: false,
+    },
   };
 }

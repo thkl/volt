@@ -74,6 +74,52 @@ export interface BackendHistoryReading {
   inputVoltage: number | null;
 }
 
+export interface AlertSettings {
+  rules: {
+    onBattery: boolean;
+    powerRestored: boolean;
+    lowBattery: boolean;
+    lowBatteryRestored: boolean;
+    lowRuntime: boolean;
+    runtimeThresholdMinutes: number;
+    connectionLost: boolean;
+    connectionRestored: boolean;
+  };
+  pushover: { enabled: boolean; configured: boolean };
+  email: {
+    enabled: boolean;
+    host: string;
+    port: number;
+    secure: boolean;
+    from: string;
+    to: string;
+    configured: boolean;
+    usernameConfigured: boolean;
+    credentialsConfigured: boolean;
+  };
+}
+
+export interface AlertSettingsForm {
+  rules: AlertSettings['rules'];
+  pushover: {
+    enabled: boolean;
+    apiToken: string;
+    userKey: string;
+    clearCredentials: boolean;
+  };
+  email: {
+    enabled: boolean;
+    host: string;
+    port: number;
+    secure: boolean;
+    username: string;
+    password: string;
+    from: string;
+    to: string;
+    clearCredentials: boolean;
+  };
+}
+
 @Injectable({ providedIn: 'root' })
 export class LiveUpdates {
   private readonly state = inject(DemoState);
@@ -166,6 +212,41 @@ export class LiveUpdates {
     } catch {
       return null;
     }
+  }
+
+  async getAlertSettings(): Promise<AlertSettings> {
+    const response = await fetch('/api/alerts/settings');
+    const payload: unknown = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(responseError(payload, 'Alert settings could not be loaded'));
+    if (!isRecord(payload) || !isRecord(payload['data'])) {
+      throw new Error('The server returned invalid alert settings');
+    }
+    return payload['data'] as AlertSettings;
+  }
+
+  async saveAlertSettings(settings: AlertSettingsForm): Promise<AlertSettings> {
+    const response = await fetch('/api/alerts/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    });
+    const payload: unknown = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(responseError(payload, 'Alert settings could not be saved'));
+    if (!isRecord(payload) || !isRecord(payload['data'])) {
+      throw new Error('The server returned invalid alert settings');
+    }
+    return payload['data'] as AlertSettings;
+  }
+
+  async sendAlertTest(channel: 'pushover' | 'email'): Promise<void> {
+    const response = await fetch('/api/alerts/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel }),
+    });
+    if (response.ok) return;
+    const payload: unknown = await response.json().catch(() => null);
+    throw new Error(responseError(payload, 'The test alert could not be delivered'));
   }
 
   private receive(raw: unknown): void {
@@ -356,6 +437,14 @@ export class LiveUpdates {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function responseError(payload: unknown, fallback: string): string {
+  return isRecord(payload) &&
+    isRecord(payload['error']) &&
+    typeof payload['error']['message'] === 'string'
+    ? payload['error']['message']
+    : fallback;
 }
 
 export interface NutHostForm {
