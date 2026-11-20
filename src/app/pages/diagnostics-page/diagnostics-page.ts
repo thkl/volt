@@ -50,9 +50,7 @@ export class DiagnosticsPage {
     if (!Number.isFinite(timestamp)) return 'Time unavailable';
     return new Date(timestamp).toLocaleString([], {
       dateStyle: 'medium',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
+      timeStyle: 'medium',
     });
   }
 

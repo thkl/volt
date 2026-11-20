@@ -149,8 +149,7 @@ export class ShutdownReadinessPage {
     if (!Number.isFinite(timestamp)) return 'time unavailable';
     return new Date(timestamp).toLocaleString([], {
       dateStyle: 'medium',
-      hour: '2-digit',
-      minute: '2-digit',
+      timeStyle: 'short',
     });
   }
 
