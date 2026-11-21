@@ -11,6 +11,8 @@ import {
 import { FormsModule } from '@angular/forms';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthState } from './auth-state';
+import { DeleteConfirmationDialog } from './components/delete-confirmation-dialog/delete-confirmation-dialog';
+import type { DeleteConfirmationTarget } from './components/delete-confirmation-dialog/delete-confirmation-dialog';
 import { HomeAssistantConnectionForm } from './components/homeassistant-connection-form/homeassistant-connection-form';
 import { DemoState } from './demo-state';
 import {
@@ -28,7 +30,14 @@ import type { HomeAssistantMetricDescriptor } from './components/homeassistant-c
 import type { BackendHost, SourceDiagnostic } from './demo-state';
 
 @Component({
-  imports: [FormsModule, HomeAssistantConnectionForm, RouterLink, RouterLinkActive, RouterOutlet],
+  imports: [
+    DeleteConfirmationDialog,
+    FormsModule,
+    HomeAssistantConnectionForm,
+    RouterLink,
+    RouterLinkActive,
+    RouterOutlet,
+  ],
   selector: 'app-root',
   styleUrl: './app.css',
   templateUrl: './app.html',
@@ -42,6 +51,9 @@ export class App implements OnInit, OnDestroy {
   readonly hostError = signal('');
   readonly demoUpsSaving = signal(false);
   readonly demoUpsError = signal('');
+  readonly deleteTarget = signal<DeleteConfirmationTarget | null>(null);
+  readonly deleteBusy = signal(false);
+  readonly deleteError = signal('');
   readonly editingHostId = signal<string | null>(null);
   readonly hostFormType = signal<'nut' | 'homeassistant'>('nut');
   readonly alertSettings = signal<AlertSettings | null>(null);
@@ -368,17 +380,37 @@ export class App implements OnInit, OnDestroy {
     }
   }
 
-  async removeHost(hostId: string): Promise<void> {
-    this.hostError.set('');
-    this.demoUpsError.set('');
+  requestHostDeletion(hostId: string): void {
+    const host = this.state.hosts().find((item) => item.id === hostId);
+    if (!host) return;
+    this.deleteError.set('');
+    this.deleteTarget.set({
+      id: host.id,
+      name: host.name,
+      scope: this.isDemoFleetHost(host) ? 'ups' : 'source',
+      deviceCount: this.state.devices().filter((device) => device.hostId === host.id).length,
+    });
+  }
+
+  cancelHostDeletion(): void {
+    if (this.deleteBusy()) return;
+    this.deleteTarget.set(null);
+    this.deleteError.set('');
+  }
+
+  async confirmHostDeletion(): Promise<void> {
+    const target = this.deleteTarget();
+    if (!target || this.deleteBusy()) return;
+    this.deleteBusy.set(true);
+    this.deleteError.set('');
     try {
-      await this.liveUpdates.removeHost(hostId);
-      if (this.editingHostId() === hostId) this.cancelHostEdit();
+      await this.liveUpdates.removeHost(target.id);
+      this.deleteTarget.set(null);
+      if (this.editingHostId() === target.id) this.cancelHostEdit();
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Host could not be removed';
-      const host = this.state.hosts().find((item) => item.id === hostId);
-      if (this.isDemoFleetHost(host)) this.demoUpsError.set(message);
-      else this.hostError.set(message);
+      this.deleteError.set(error instanceof Error ? error.message : 'Host could not be deleted');
+    } finally {
+      this.deleteBusy.set(false);
     }
   }
 

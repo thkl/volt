@@ -93,7 +93,6 @@
     </nav>
 
     <div class="topbar-controls">
-
       @if (state.isDemo()) {
         <label class="topbar-select demo-select">
           <span>DEMO STATE</span>
@@ -252,7 +251,7 @@
                   <button
                     class="small-button remove-button"
                     type="button"
-                    (click)="removeHost(host.id)"
+                    (click)="requestHostDeletion(host.id)"
                     [attr.aria-label]="
                       (isDemoFleetHost(host) ? 'Delete UPS ' : 'Delete source ') + host.name
                     "
@@ -906,4 +905,12 @@
       }
     </section>
   </dialog>
+  <app-delete-confirmation-dialog
+    [open]="deleteTarget() !== null"
+    [target]="deleteTarget()"
+    [busy]="deleteBusy()"
+    [error]="deleteError()"
+    (cancelled)="cancelHostDeletion()"
+    (confirmed)="confirmHostDeletion()"
+  />
 }

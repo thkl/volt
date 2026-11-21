@@ -1,0 +1,47 @@
+<dialog
+  #dialog
+  class="delete-confirmation"
+  aria-labelledby="delete-dialog-title"
+  aria-describedby="delete-dialog-description"
+  (click)="handleDialogClick($event)"
+  (cancel)="handleCancel($event)"
+>
+  @if (target(); as target) {
+    <div class="confirmation-content">
+      <span class="confirmation-icon" aria-hidden="true">!</span>
+      <p class="eyebrow">PERMANENT DELETION</p>
+      <h2 id="delete-dialog-title">
+        {{ target.scope === 'ups' ? 'Delete UPS?' : 'Delete source?' }}
+      </h2>
+      <p class="confirmation-name">{{ target.name }}</p>
+      <p id="delete-dialog-description" class="confirmation-description">
+        @if (target.scope === 'ups') {
+          This permanently deletes this UPS, its history, events, and saved device settings from
+          Volt.
+        } @else {
+          This permanently deletes this source and all {{ target.deviceCount }} UPS
+          {{ target.deviceCount === 1 ? 'device' : 'devices' }} on it, including their history,
+          events, and saved device settings.
+        }
+      </p>
+      <p class="external-data-note">Data already sent to InfluxDB will remain there.</p>
+      @if (error()) {
+        <p class="confirmation-error" role="alert">{{ error() }}</p>
+      }
+      <div class="confirmation-actions">
+        <button
+          class="cancel-button"
+          type="button"
+          [disabled]="busy()"
+          (click)="cancelled.emit()"
+          autofocus
+        >
+          Cancel
+        </button>
+        <button class="delete-button" type="button" [disabled]="busy()" (click)="confirmed.emit()">
+          {{ busy() ? 'Deleting…' : 'Delete permanently' }}
+        </button>
+      </div>
+    </div>
+  }
+</dialog>
