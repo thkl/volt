@@ -125,6 +125,8 @@
       [liveMode]="state.backendMode() === 'nut' || state.backendMode() === 'multi'"
     />
 
+    <app-energy-impact-panel />
+
     <section class="metrics-strip" aria-label="Available electrical readings">
       @for (item of metrics(); track item.label) {
         <div class="metric-item">

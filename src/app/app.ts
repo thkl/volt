@@ -15,6 +15,7 @@ import { DemoState } from './demo-state';
 import {
   AlertSettings,
   AlertSettingsForm,
+  EnergyImpactSettings,
   InfluxDbSettings,
   InfluxDbSettingsForm,
   LiveUpdates,
@@ -48,9 +49,15 @@ export class App implements OnInit, OnDestroy {
   readonly influxTesting = signal(false);
   readonly influxError = signal('');
   readonly influxNotice = signal('');
+  readonly energySettings = signal<EnergyImpactSettings | null>(null);
+  readonly energyLoading = signal(false);
+  readonly energySaving = signal(false);
+  readonly energyError = signal('');
+  readonly energyNotice = signal('');
   hostForm: NutHostForm = emptyHostForm();
   alertForm: AlertSettingsForm = emptyAlertForm();
   influxForm: InfluxDbSettingsForm = emptyInfluxForm();
+  energyForm: EnergyImpactSettings = emptyEnergySettings();
   loginEmail = '';
   loginPassword = '';
 
@@ -91,6 +98,7 @@ export class App implements OnInit, OnDestroy {
     this.settingsDialog()?.nativeElement.showModal();
     if (!this.alertSettings() && !this.alertLoading()) void this.loadAlertSettings();
     if (!this.influxLoading()) void this.loadInfluxSettings();
+    if (!this.energyLoading()) void this.loadEnergySettings();
   }
 
   closeSettings(): void {
@@ -212,6 +220,40 @@ export class App implements OnInit, OnDestroy {
           timeStyle: 'short',
         })}`
       : 'Last write time unavailable';
+  }
+
+  async loadEnergySettings(): Promise<void> {
+    this.energyLoading.set(true);
+    this.energyError.set('');
+    try {
+      const settings = await this.liveUpdates.getEnergyImpactSettings();
+      this.energySettings.set(settings);
+      this.energyForm = { ...settings };
+    } catch (error) {
+      this.energyError.set(
+        error instanceof Error ? error.message : 'Energy settings could not be loaded',
+      );
+    } finally {
+      this.energyLoading.set(false);
+    }
+  }
+
+  async saveEnergySettings(): Promise<void> {
+    this.energySaving.set(true);
+    this.energyError.set('');
+    this.energyNotice.set('');
+    try {
+      const settings = await this.liveUpdates.saveEnergyImpactSettings(this.energyForm);
+      this.energySettings.set(settings);
+      this.energyForm = { ...settings };
+      this.energyNotice.set('Energy settings saved.');
+    } catch (error) {
+      this.energyError.set(
+        error instanceof Error ? error.message : 'Energy settings could not be saved',
+      );
+    } finally {
+      this.energySaving.set(false);
+    }
   }
 
   async testAlert(channel: 'pushover' | 'email'): Promise<void> {
@@ -365,6 +407,10 @@ function emptyInfluxForm(): InfluxDbSettingsForm {
     token: '',
     clearToken: false,
   };
+}
+
+function emptyEnergySettings(): EnergyImpactSettings {
+  return { pricePerKwh: null, currency: 'EUR', carbonIntensityGramsPerKwh: null };
 }
 
 function formFromAlertSettings(settings: AlertSettings): AlertSettingsForm {

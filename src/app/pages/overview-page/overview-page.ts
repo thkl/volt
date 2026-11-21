@@ -3,9 +3,10 @@ import { RouterLink } from '@angular/router';
 import { HistoryChart } from '../../components/history-chart/history-chart';
 import { PowerFlow } from '../../components/power-flow/power-flow';
 import { DemoState } from '../../demo-state';
+import { EnergyImpactPanel } from '../../components/energy-impact-panel/energy-impact-panel';
 
 @Component({
-  imports: [HistoryChart, PowerFlow, RouterLink],
+  imports: [EnergyImpactPanel, HistoryChart, PowerFlow, RouterLink],
   selector: 'app-overview-page',
   styleUrl: './overview-page.css',
   templateUrl: './overview-page.html',

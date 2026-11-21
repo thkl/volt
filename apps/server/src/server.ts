@@ -10,6 +10,7 @@ import { loadOrCreateCredentialKey } from './security/key-store.js';
 import { AuthManager } from './auth/auth-manager.js';
 import { AlertService } from './alerts/alert-service.js';
 import { InfluxDbService } from './integrations/influxdb-service.js';
+import { EnergyImpactService } from './energy/energy-impact-service.js';
 
 export interface VoltServer {
   readonly httpServer: Server;
@@ -48,6 +49,7 @@ export function createVoltServer(config: AppConfig): VoltServer {
   const collector = new HostManager(store, config, credentialKey, registry);
   const alertService = new AlertService(store, credentialKey, collector);
   const influxDbService = new InfluxDbService(store, credentialKey, collector);
+  const energyImpactService = new EnergyImpactService(store, config.sampleIntervalMs);
   const authManager = new AuthManager(config);
   const app = createApp({
     config,
@@ -57,6 +59,7 @@ export function createVoltServer(config: AppConfig): VoltServer {
     authManager,
     alertService,
     influxDbService,
+    energyImpactService,
   });
   const httpServer = createServer(app);
   const websocketHub = new WebSocketHub(httpServer, config, store, collector, authManager);

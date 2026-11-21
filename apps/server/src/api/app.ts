@@ -34,6 +34,10 @@ import {
   InfluxDbService,
   InfluxDeliveryError,
 } from '../integrations/influxdb-service.js';
+import {
+  EnergyImpactConfigurationError,
+  EnergyImpactService,
+} from '../energy/energy-impact-service.js';
 
 export class ApiError extends Error {
   constructor(
@@ -53,6 +57,7 @@ export interface ApiDependencies {
   authManager?: AuthManager;
   alertService?: AlertService;
   influxDbService?: InfluxDbService;
+  energyImpactService?: EnergyImpactService;
 }
 
 const SHUTDOWN_READINESS_KEY_PREFIX = 'shutdown-readiness:';
@@ -65,6 +70,7 @@ export function createApp({
   authManager = new AuthManager(config),
   alertService,
   influxDbService,
+  energyImpactService,
 }: ApiDependencies): Express {
   const app = express();
   if (config.trustedProxyCidrs.length > 0) {
@@ -181,6 +187,32 @@ export function createApp({
     }
   });
 
+  app.get('/api/energy-impact/settings', (_request, response) => {
+    if (!energyImpactService) {
+      throw new ApiError(
+        503,
+        'energy_impact_unavailable',
+        'Energy impact settings are unavailable',
+      );
+    }
+    response.json({ data: energyImpactService.getSettings() });
+  });
+
+  app.put('/api/energy-impact/settings', (request, response) => {
+    if (!energyImpactService) {
+      throw new ApiError(
+        503,
+        'energy_impact_unavailable',
+        'Energy impact settings are unavailable',
+      );
+    }
+    try {
+      response.json({ data: energyImpactService.saveSettings(request.body) });
+    } catch (error) {
+      throw energyImpactConfigurationError(error);
+    }
+  });
+
   app.post('/api/hosts', (request, response) => {
     const host = parseNutHostInput(request.body);
     try {
@@ -224,6 +256,20 @@ export function createApp({
     const range = parseRange(request.query['range']);
     const metrics = parseMetrics(request.query['metrics']);
     response.json({ data: store.getHistory(deviceId, range, metrics) });
+  });
+
+  app.get('/api/devices/:id/energy-impact', (request, response) => {
+    if (!energyImpactService) {
+      throw new ApiError(503, 'energy_impact_unavailable', 'Energy impact is unavailable');
+    }
+    const deviceId = request.params['id'] ?? '';
+    if (!store.getDevice(deviceId)) throw new ApiError(404, 'not_found', 'Device not found');
+    try {
+      const timeZone = queryString(request.query['timeZone']) ?? 'UTC';
+      response.json({ data: energyImpactService.getImpact(deviceId, timeZone) });
+    } catch (error) {
+      throw energyImpactConfigurationError(error);
+    }
   });
 
   app.get('/api/devices/:id/outages', (request, response) => {
@@ -557,6 +603,13 @@ function influxConfigurationError(error: unknown): ApiError {
     return new ApiError(502, 'influx_delivery_failed', error.message);
   }
   return new ApiError(500, 'internal_error', 'InfluxDB settings could not be saved');
+}
+
+function energyImpactConfigurationError(error: unknown): ApiError {
+  if (error instanceof EnergyImpactConfigurationError) {
+    return new ApiError(400, 'energy_impact_configuration_error', error.message);
+  }
+  return new ApiError(500, 'internal_error', 'Energy impact could not be calculated');
 }
 
 const errorHandler: ErrorRequestHandler = (error: unknown, _request, response: Response, _next) => {

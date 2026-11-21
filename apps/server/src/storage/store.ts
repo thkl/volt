@@ -83,6 +83,12 @@ export interface DatabaseDiagnostics {
   };
 }
 
+export interface PowerSample {
+  observedAtMs: number;
+  realPower: number | null;
+  powerEstimated: boolean;
+}
+
 interface DeviceRow {
   id: string;
   host_id: string;
@@ -123,6 +129,12 @@ interface EventRow {
 
 interface HistoryRow extends Record<string, number | null> {
   bucket_ms: number;
+}
+
+interface PowerSampleRow {
+  observed_at_ms: number;
+  real_power: number | null;
+  power_estimated: number;
 }
 
 const RANGE_MS: Record<HistoryRange, number> = {
@@ -484,6 +496,28 @@ export class Store {
       bucketMs,
       series,
     };
+  }
+
+  getPowerSamples(deviceId: string, fromMs: number, toMs: number): PowerSample[] {
+    const previous = this.database
+      .prepare(
+        `SELECT observed_at_ms, real_power, power_estimated FROM samples
+         WHERE device_id = ? AND observed_at_ms < ?
+         ORDER BY observed_at_ms DESC, id DESC LIMIT 1`,
+      )
+      .get(deviceId, fromMs) as PowerSampleRow | undefined;
+    const rows = this.database
+      .prepare(
+        `SELECT observed_at_ms, real_power, power_estimated FROM samples
+         WHERE device_id = ? AND observed_at_ms >= ? AND observed_at_ms <= ?
+         ORDER BY observed_at_ms ASC, id ASC`,
+      )
+      .all(deviceId, fromMs, toMs) as unknown as PowerSampleRow[];
+    return [...(previous ? [previous] : []), ...rows].map((row) => ({
+      observedAtMs: row.observed_at_ms,
+      realPower: row.real_power,
+      powerEstimated: row.power_estimated === 1,
+    }));
   }
 
   getEvents(options: { deviceId?: string; limit: number; cursorId?: number }): EventPage {

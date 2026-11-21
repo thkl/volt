@@ -639,6 +639,86 @@
       }
     </section>
 
+    <section class="alert-settings" aria-labelledby="energy-impact-title">
+      <div class="settings-section-heading">
+        <div>
+          <p class="eyebrow">ENERGY ESTIMATES</p>
+          <h3 id="energy-impact-title">Electricity cost &amp; CO₂</h3>
+        </div>
+      </div>
+
+      @if (energyLoading()) {
+        <p class="form-hint" role="status">Loading energy settings…</p>
+      } @else if (energySettings()) {
+        <form (ngSubmit)="saveEnergySettings()">
+          <div class="host-form">
+            <h4>Utility rate and grid emissions</h4>
+            <div class="host-form-grid">
+              <label class="form-field">
+                <span>Electricity price per kWh</span>
+                <input
+                  [(ngModel)]="energyForm.pricePerKwh"
+                  name="electricityPricePerKwh"
+                  type="number"
+                  min="0"
+                  max="1000"
+                  step="0.0001"
+                  placeholder="For example 0.32"
+                />
+              </label>
+              <label class="form-field">
+                <span>Currency code</span>
+                <input
+                  [(ngModel)]="energyForm.currency"
+                  name="energyCurrency"
+                  maxlength="3"
+                  pattern="[A-Za-z]{3}"
+                  autocomplete="off"
+                  placeholder="EUR"
+                  required
+                />
+              </label>
+              <label class="form-field field-wide">
+                <span>Grid emissions intensity · gCO₂e per kWh</span>
+                <input
+                  [(ngModel)]="energyForm.carbonIntensityGramsPerKwh"
+                  name="carbonIntensityGramsPerKwh"
+                  type="number"
+                  min="0"
+                  max="5000"
+                  step="1"
+                  placeholder="For example 350"
+                />
+              </label>
+            </div>
+            <p class="form-hint">
+              Enter the electricity price and the grid’s emissions factor. Dayparts use your
+              browser’s local time: night 22:00–06:00, morning 06:00–12:00, afternoon 12:00–18:00,
+              evening 18:00–22:00.
+            </p>
+            <p class="form-hint">
+              Estimates use the selected UPS’s output power. UPS losses are not included; missing
+              sample gaps are excluded, and estimated watt readings may be included.
+            </p>
+            <div class="host-form-actions">
+              <button class="primary-button" type="submit" [disabled]="energySaving()">
+                {{ energySaving() ? 'Saving…' : 'Save energy settings' }}
+              </button>
+            </div>
+          </div>
+          @if (energyError()) {
+            <p class="form-error" role="alert">{{ energyError() }}</p>
+          }
+          @if (energyNotice()) {
+            <p class="form-hint" role="status">{{ energyNotice() }}</p>
+          }
+        </form>
+      } @else if (energyError()) {
+        <p class="form-error" role="alert">{{ energyError() }}</p>
+        <button class="small-button" type="button" (click)="loadEnergySettings()">Try again</button>
+      }
+    </section>
+
     <section class="alert-settings" aria-labelledby="influx-title">
       <div class="settings-section-heading">
         <div>

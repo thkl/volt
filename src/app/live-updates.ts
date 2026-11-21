@@ -153,6 +153,39 @@ export interface InfluxDbSettingsForm {
   clearToken: boolean;
 }
 
+export interface EnergyImpactSettings {
+  pricePerKwh: number | null;
+  currency: string;
+  carbonIntensityGramsPerKwh: number | null;
+}
+
+export interface EnergyPeriodImpact {
+  energyKwh: number | null;
+  estimatedEnergyKwh: number;
+  cost: number | null;
+  co2Kg: number | null;
+  coveragePercent: number;
+}
+
+export interface EnergyImpact extends EnergyImpactSettings {
+  deviceId: string;
+  timeZone: string;
+  maxGapSeconds: number;
+  periods: {
+    lastHour: EnergyPeriodImpact;
+    last24Hours: EnergyPeriodImpact;
+    last30Days: EnergyPeriodImpact;
+  };
+  dayparts: Array<
+    EnergyPeriodImpact & {
+      id: 'night' | 'morning' | 'afternoon' | 'evening';
+      label: string;
+      hours: string;
+    }
+  >;
+  dailyTrend: Array<EnergyPeriodImpact & { date: string }>;
+}
+
 export interface VoltInternals {
   uptimeMs: number;
   memory: {
@@ -182,6 +215,7 @@ export class LiveUpdates {
   private readonly state = inject(DemoState);
   readonly outageRevision = signal(0);
   readonly eventRevision = signal(0);
+  readonly energyImpactRevision = signal(0);
   private socket: WebSocket | null = null;
   private reconnectTimer: number | undefined;
   private reconnectAttempts = 0;
@@ -425,6 +459,51 @@ export class LiveUpdates {
     if (response.ok) return;
     const payload: unknown = await response.json().catch(() => null);
     throw new Error(responseError(payload, 'The InfluxDB test write failed'));
+  }
+
+  async getEnergyImpactSettings(): Promise<EnergyImpactSettings> {
+    const response = await fetch('/api/energy-impact/settings');
+    const payload: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(responseError(payload, 'Energy settings could not be loaded'));
+    }
+    if (!isRecord(payload) || !isEnergyImpactSettings(payload['data'])) {
+      throw new Error('The server returned invalid energy settings');
+    }
+    return payload['data'];
+  }
+
+  async saveEnergyImpactSettings(settings: EnergyImpactSettings): Promise<EnergyImpactSettings> {
+    const response = await fetch('/api/energy-impact/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    });
+    const payload: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(responseError(payload, 'Energy settings could not be saved'));
+    }
+    if (!isRecord(payload) || !isEnergyImpactSettings(payload['data'])) {
+      throw new Error('The server returned invalid energy settings');
+    }
+    this.energyImpactRevision.update((revision) => revision + 1);
+    return payload['data'];
+  }
+
+  async getEnergyImpact(deviceId: string): Promise<EnergyImpact> {
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    const query = new URLSearchParams({ timeZone });
+    const response = await fetch(
+      `/api/devices/${encodeURIComponent(deviceId)}/energy-impact?${query}`,
+    );
+    const payload: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(responseError(payload, 'Energy impact could not be loaded'));
+    }
+    if (!isRecord(payload) || !isEnergyImpact(payload['data'])) {
+      throw new Error('The server returned invalid energy impact data');
+    }
+    return payload['data'];
   }
 
   private receive(raw: unknown): void {
@@ -733,6 +812,62 @@ function isInfluxDbSettings(value: unknown): value is InfluxDbSettings {
     (value['lastWriteAt'] === null || typeof value['lastWriteAt'] === 'string') &&
     (value['lastError'] === null || typeof value['lastError'] === 'string')
   );
+}
+
+function isEnergyImpactSettings(value: unknown): value is EnergyImpactSettings {
+  return (
+    isRecord(value) &&
+    isOptionalNumber(value['pricePerKwh']) &&
+    typeof value['currency'] === 'string' &&
+    isOptionalNumber(value['carbonIntensityGramsPerKwh'])
+  );
+}
+
+function isEnergyImpact(value: unknown): value is EnergyImpact {
+  return (
+    isRecord(value) &&
+    typeof value['deviceId'] === 'string' &&
+    typeof value['timeZone'] === 'string' &&
+    typeof value['currency'] === 'string' &&
+    isOptionalNumber(value['pricePerKwh']) &&
+    isOptionalNumber(value['carbonIntensityGramsPerKwh']) &&
+    typeof value['maxGapSeconds'] === 'number' &&
+    isRecord(value['periods']) &&
+    isEnergyPeriodImpact(value['periods']['lastHour']) &&
+    isEnergyPeriodImpact(value['periods']['last24Hours']) &&
+    isEnergyPeriodImpact(value['periods']['last30Days']) &&
+    Array.isArray(value['dayparts']) &&
+    value['dayparts'].every(
+      (item) =>
+        isRecord(item) &&
+        (item['id'] === 'night' ||
+          item['id'] === 'morning' ||
+          item['id'] === 'afternoon' ||
+          item['id'] === 'evening') &&
+        typeof item['label'] === 'string' &&
+        typeof item['hours'] === 'string' &&
+        isEnergyPeriodImpact(item),
+    ) &&
+    Array.isArray(value['dailyTrend']) &&
+    value['dailyTrend'].every(
+      (item) => isRecord(item) && typeof item['date'] === 'string' && isEnergyPeriodImpact(item),
+    )
+  );
+}
+
+function isEnergyPeriodImpact(value: unknown): value is EnergyPeriodImpact {
+  return (
+    isRecord(value) &&
+    isOptionalNumber(value['energyKwh']) &&
+    typeof value['estimatedEnergyKwh'] === 'number' &&
+    isOptionalNumber(value['cost']) &&
+    isOptionalNumber(value['co2Kg']) &&
+    typeof value['coveragePercent'] === 'number'
+  );
+}
+
+function isOptionalNumber(value: unknown): value is number | null {
+  return value === null || (typeof value === 'number' && Number.isFinite(value));
 }
 
 export interface NutHostForm {
