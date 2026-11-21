@@ -18,6 +18,7 @@ const OIDC_TTL_MS = 10 * 60_000;
 const LOGIN_WINDOW_MS = 15 * 60_000;
 const MAX_LOGIN_ATTEMPTS = 5;
 const CLOCK_TOLERANCE_SECONDS = 60;
+const anonEndpoints = ['/api/health'];
 
 interface Session {
   email: string;
@@ -57,7 +58,7 @@ export class AuthManager {
   private oidcMetadataPromise: Promise<OidcMetadata> | null = null;
   private oidcKeysPromise: Promise<OidcJwk[]> | null = null;
 
-  constructor(private readonly config: AppConfig) {}
+  constructor(private readonly config: AppConfig) { }
 
   get enabled(): boolean {
     return this.config.auth.enabled;
@@ -88,7 +89,7 @@ export class AuthManager {
   }
 
   readonly middleware: RequestHandler = (request, response, next) => {
-    if (!this.config.auth.enabled || this.sessionFor(request)) {
+    if (!this.config.auth.enabled || this.sessionFor(request) || anonEndpoints.includes(request.originalUrl)) {
       next();
       return;
     }
