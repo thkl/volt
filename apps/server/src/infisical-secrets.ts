@@ -31,17 +31,21 @@ export async function loadInfisicalAuthSecrets(
   let secrets: Record<string, string>;
   try {
     const loginUrl = apiUrl(siteUrl, '/api/v1/auth/universal-auth/login');
-    const loginPayload = await requestJson(loginUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clientId, clientSecret }),
-    });
+    const loginPayload = await requestJson(
+      loginUrl,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId, clientSecret }),
+      },
+      'Universal Auth login',
+    );
     if (
       !isRecord(loginPayload) ||
       typeof loginPayload['accessToken'] !== 'string' ||
       !loginPayload['accessToken']
     ) {
-      throw new Error('Infisical returned an invalid Universal Auth response');
+      throw new InfisicalRequestError('Universal Auth login returned an invalid response');
     }
 
     const secretsUrl = apiUrl(siteUrl, '/api/v4/secrets');
@@ -53,12 +57,16 @@ export async function loadInfisicalAuthSecrets(
       secretPath,
       viewSecretValue: 'true',
     }).toString();
-    const response = await requestJson(secretsUrl, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${loginPayload['accessToken']}` },
-    });
+    const response = await requestJson(
+      secretsUrl,
+      {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${loginPayload['accessToken']}` },
+      },
+      'secret fetch',
+    );
     if (!isRecord(response) || !Array.isArray(response['secrets'])) {
-      throw new Error('Infisical returned an invalid secrets response');
+      throw new InfisicalRequestError('secret fetch returned an invalid response');
     }
 
     const values = new Map<string, string>();
@@ -77,7 +85,10 @@ export async function loadInfisicalAuthSecrets(
         return value === undefined || value.length === 0 ? [] : [[name, value]];
       }),
     );
-  } catch {
+  } catch (error) {
+    if (error instanceof InfisicalRequestError) {
+      throw new Error(`Infisical ${error.message}`);
+    }
     throw new Error('Infisical authentication secrets could not be loaded');
   }
 
@@ -111,17 +122,46 @@ function apiUrl(siteUrl: string, path: string): URL {
   return new URL(path.replace(/^\//, ''), `${siteUrl.replace(/\/$/, '')}/`);
 }
 
-async function requestJson(url: URL, init: RequestInit): Promise<unknown> {
+async function requestJson(url: URL, init: RequestInit, operation: string): Promise<unknown> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    const response = await fetch(url, { ...init, signal: controller.signal });
-    if (!response.ok) throw new Error(`Infisical request failed (${response.status})`);
-    return await response.json();
+    let response: Response;
+    try {
+      response = await fetch(url, { ...init, signal: controller.signal });
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new InfisicalRequestError(`${operation} timed out after ${REQUEST_TIMEOUT_MS} ms`);
+      }
+      const code = getNetworkErrorCode(error);
+      throw new InfisicalRequestError(
+        `${operation} network request failed${code ? ` (${code})` : ''}`,
+      );
+    }
+    if (!response.ok) {
+      throw new InfisicalRequestError(`${operation} returned HTTP ${response.status}`);
+    }
+    try {
+      return await response.json();
+    } catch {
+      if (controller.signal.aborted) {
+        throw new InfisicalRequestError(`${operation} timed out after ${REQUEST_TIMEOUT_MS} ms`);
+      }
+      throw new InfisicalRequestError(`${operation} response was not valid JSON`);
+    }
   } finally {
     clearTimeout(timeout);
   }
 }
+
+function getNetworkErrorCode(error: unknown): string | null {
+  if (typeof error !== 'object' || error === null || !('cause' in error)) return null;
+  const cause = error.cause;
+  if (typeof cause !== 'object' || cause === null || !('code' in cause)) return null;
+  return typeof cause.code === 'string' && /^[A-Z0-9_]+$/.test(cause.code) ? cause.code : null;
+}
+
+class InfisicalRequestError extends Error {}
 
 function normalizeSiteUrl(value: string): string {
   let url: URL;
