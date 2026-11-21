@@ -39,6 +39,10 @@
   opacity: 60%;
 }
 
+.projection_empty {
+  margin-top: 1.9em;
+}
+
 .bolt_icon {
   height: 3em;
   opacity: 60%;

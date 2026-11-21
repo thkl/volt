@@ -41,6 +41,10 @@
         <span>{{ period.projectionLabel }}</span>
         <strong>{{ projectedCostLabel(period.data, impact.currency) }}</strong>
       </div>
+      } @else {
+      <div class="energy-projection">
+        <span class="projection_empty"></span>
+      </div>
       }
       <dl>
         <div class="cost-grid">
