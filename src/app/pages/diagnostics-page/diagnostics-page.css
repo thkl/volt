@@ -9,7 +9,8 @@
 
 .page-heading,
 .source-heading,
-.ups-heading {
+.ups-heading,
+.internals-heading {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
@@ -18,6 +19,10 @@
 
 .page-heading {
   min-height: 82px;
+}
+
+.internals-heading {
+  align-items: center;
 }
 
 .eyebrow {
@@ -96,6 +101,7 @@
 }
 
 .source-card,
+.internals-card,
 .diagnostic-empty {
   overflow: hidden;
   border: 1px solid #2a3035;
@@ -107,11 +113,16 @@
   padding: 20px;
 }
 
+.internals-card {
+  padding: 20px;
+}
+
 .source-heading {
   align-items: center;
 }
 
 .source-heading h2,
+.internals-heading h2,
 .diagnostic-empty h2 {
   margin: 0;
   color: #eef1f0;
@@ -131,7 +142,9 @@
 }
 
 .source-facts,
-.ups-readings {
+.ups-readings,
+.internals-facts,
+.internals-records {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1px;
@@ -143,25 +156,71 @@
 }
 
 .source-facts > div,
-.ups-readings > div {
+.ups-readings > div,
+.internals-facts > div,
+.internals-records > div {
   min-width: 0;
   padding: 11px 12px;
   background: #111416;
 }
 
 .source-facts dt,
-.ups-readings dt {
+.ups-readings dt,
+.internals-facts dt,
+.internals-records dt {
   color: #818d90;
   font-size: 0.65rem;
 }
 
 .source-facts dd,
-.ups-readings dd {
+.ups-readings dd,
+.internals-facts dd,
+.internals-records dd {
   margin: 5px 0 0;
   color: #dce2e0;
   font-size: 0.77rem;
   line-height: 1.45;
   overflow-wrap: anywhere;
+}
+
+.internals-updated {
+  color: #829092;
+  font-size: 0.68rem;
+}
+
+.internals-facts {
+  margin-top: 14px;
+}
+
+.record-breakdown {
+  display: grid;
+  gap: 9px;
+  margin-top: 18px;
+}
+
+.record-breakdown h3 {
+  margin: 0;
+  color: #dce2e0;
+  font-size: 0.8rem;
+  font-weight: 610;
+}
+
+.internals-records {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+}
+
+.internals-note,
+.internals-message,
+.internals-warning {
+  margin: 12px 0 0;
+  color: #8e999b;
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+
+.internals-warning {
+  color: #edc498;
 }
 
 .source-error {
@@ -309,6 +368,11 @@
   }
 
   .source-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .internals-facts,
+  .internals-records {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 

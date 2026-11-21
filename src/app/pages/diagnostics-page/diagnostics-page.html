@@ -16,6 +16,96 @@
     </span>
   </header>
 
+  <section class="internals-card" aria-label="Volt internals">
+    <header class="internals-heading">
+      <div>
+        <p class="eyebrow">APPLICATION HEALTH</p>
+        <h2>Volt internals</h2>
+      </div>
+      @if (internals(); as stats) {
+        <span class="internals-updated">{{ refreshedLabel(stats.collectedAt) }}</span>
+      }
+    </header>
+
+    @if (internals(); as stats) {
+      <dl class="internals-facts">
+        <div>
+          <dt>Process uptime</dt>
+          <dd>{{ uptimeLabel(stats.uptimeMs) }}</dd>
+        </div>
+        <div>
+          <dt>Resident memory</dt>
+          <dd>{{ bytesLabel(stats.memory.rssBytes) }}</dd>
+        </div>
+        <div>
+          <dt>JavaScript heap</dt>
+          <dd>
+            {{ bytesLabel(stats.memory.heapUsedBytes) }} used ·
+            {{ bytesLabel(stats.memory.heapTotalBytes) }} allocated
+          </dd>
+        </div>
+        <div>
+          <dt>External memory</dt>
+          <dd>{{ bytesLabel(stats.memory.externalBytes) }}</dd>
+        </div>
+        <div>
+          <dt>SQLite footprint</dt>
+          <dd>
+            {{ stats.database.fileBacked ? bytesLabel(stats.database.sizeBytes) : 'In-memory' }}
+          </dd>
+        </div>
+        <div>
+          <dt>Stored rows</dt>
+          <dd>{{ stats.database.records.total }}</dd>
+        </div>
+      </dl>
+
+      <div class="record-breakdown">
+        <h3>Database records</h3>
+        <dl class="internals-records">
+          <div>
+            <dt>Hosts</dt>
+            <dd>{{ stats.database.records.hosts }}</dd>
+          </div>
+          <div>
+            <dt>UPS devices</dt>
+            <dd>{{ stats.database.records.devices }}</dd>
+          </div>
+          <div>
+            <dt>History samples</dt>
+            <dd>{{ stats.database.records.samples }}</dd>
+          </div>
+          <div>
+            <dt>Events</dt>
+            <dd>{{ stats.database.records.events }}</dd>
+          </div>
+          <div>
+            <dt>App settings</dt>
+            <dd>{{ stats.database.records.appSettings }}</dd>
+          </div>
+          <div>
+            <dt>Schema migrations</dt>
+            <dd>{{ stats.database.records.schemaMigrations }}</dd>
+          </div>
+        </dl>
+      </div>
+      <p class="internals-note">
+        Database footprint includes SQLite, WAL, and shared-memory files.
+      </p>
+      @if (internalsError()) {
+        <p class="internals-warning" role="status">
+          The latest refresh failed; showing the last available values.
+        </p>
+      }
+    } @else if (internalsLoading()) {
+      <p class="internals-message">Loading backend and database metrics…</p>
+    } @else {
+      <p class="internals-message" role="status">
+        Volt internals are unavailable. Check the backend connection.
+      </p>
+    }
+  </section>
+
   @if (state.backendMode() === 'none') {
     <section class="diagnostic-empty">
       <h2>No data sources configured</h2>

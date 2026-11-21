@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, statSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import type {
@@ -67,6 +67,20 @@ export interface OutageSummary {
   confirmedDurationMs: number;
   longestConfirmedDurationMs: number | null;
   outages: OutageEpisode[];
+}
+
+export interface DatabaseDiagnostics {
+  fileBacked: boolean;
+  sizeBytes: number;
+  records: {
+    total: number;
+    hosts: number;
+    devices: number;
+    samples: number;
+    events: number;
+    appSettings: number;
+    schemaMigrations: number;
+  };
 }
 
 interface DeviceRow {
@@ -190,8 +204,10 @@ CREATE INDEX events_device_time ON events(device_id, occurred_at_ms DESC, id DES
 
 export class Store {
   private readonly database: DatabaseSync;
+  private readonly databasePath: string;
 
   constructor(path: string) {
+    this.databasePath = path;
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
     this.database = new DatabaseSync(path);
     this.database.exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
@@ -201,6 +217,33 @@ export class Store {
 
   close(): void {
     this.database.close();
+  }
+
+  getDiagnostics(): DatabaseDiagnostics {
+    const records = {
+      hosts: this.countRows('hosts'),
+      devices: this.countRows('devices'),
+      samples: this.countRows('samples'),
+      events: this.countRows('events'),
+      appSettings: this.countRows('app_settings'),
+      schemaMigrations: this.countRows('schema_migrations'),
+    };
+    const fileBacked = this.databasePath !== ':memory:';
+    const sizeBytes = fileBacked
+      ? [this.databasePath, `${this.databasePath}-wal`, `${this.databasePath}-shm`].reduce(
+          (total, path) => total + fileSize(path),
+          0,
+        )
+      : 0;
+
+    return {
+      fileBacked,
+      sizeBytes,
+      records: {
+        ...records,
+        total: Object.values(records).reduce((total, count) => total + count, 0),
+      },
+    };
   }
 
   upsertHost(
@@ -664,6 +707,13 @@ export class Store {
     return row.count;
   }
 
+  private countRows(table: string): number {
+    const row = this.database.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as {
+      count: number;
+    };
+    return row.count;
+  }
+
   getAppSetting(key: string): string | null {
     const row = this.database.prepare('SELECT value FROM app_settings WHERE key = ?').get(key) as
       { value: string } | undefined;
@@ -891,4 +941,12 @@ function mapEventRow(row: EventRow): PowerEvent {
 
 function round(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function fileSize(path: string): number {
+  try {
+    return statSync(path).size;
+  } catch {
+    return 0;
+  }
 }

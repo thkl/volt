@@ -81,6 +81,23 @@ export function createApp({
     });
   });
 
+  app.get('/api/diagnostics/internals', (_request, response) => {
+    const memory = process.memoryUsage();
+    response.json({
+      data: {
+        uptimeMs: Math.floor(process.uptime() * 1000),
+        memory: {
+          rssBytes: memory.rss,
+          heapUsedBytes: memory.heapUsed,
+          heapTotalBytes: memory.heapTotal,
+          externalBytes: memory.external,
+        },
+        database: store.getDiagnostics(),
+        collectedAt: new Date().toISOString(),
+      },
+    });
+  });
+
   app.get('/api/hosts', (_request, response) => {
     response.json({ data: store.listEnabledHosts() });
   });

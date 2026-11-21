@@ -130,6 +130,30 @@ export interface AlertSettingsForm {
   };
 }
 
+export interface VoltInternals {
+  uptimeMs: number;
+  memory: {
+    rssBytes: number;
+    heapUsedBytes: number;
+    heapTotalBytes: number;
+    externalBytes: number;
+  };
+  database: {
+    fileBacked: boolean;
+    sizeBytes: number;
+    records: {
+      total: number;
+      hosts: number;
+      devices: number;
+      samples: number;
+      events: number;
+      appSettings: number;
+      schemaMigrations: number;
+    };
+  };
+  collectedAt: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class LiveUpdates {
   private readonly state = inject(DemoState);
@@ -306,6 +330,18 @@ export class LiveUpdates {
       throw new Error('The server returned invalid alert settings');
     }
     return payload['data'];
+  }
+
+  async getVoltInternals(): Promise<VoltInternals | null> {
+    try {
+      const response = await fetch('/api/diagnostics/internals');
+      if (!response.ok) return null;
+      const payload: unknown = await response.json();
+      if (!isRecord(payload)) return null;
+      return parseVoltInternals(payload['data']);
+    } catch {
+      return null;
+    }
   }
 
   async saveAlertSettings(settings: AlertSettingsForm): Promise<AlertSettings> {
@@ -515,6 +551,37 @@ export class LiveUpdates {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseVoltInternals(value: unknown): VoltInternals | null {
+  if (!isRecord(value) || !isRecord(value['memory']) || !isRecord(value['database'])) return null;
+  const memory = value['memory'];
+  const database = value['database'];
+  const records = database['records'];
+  if (!isRecord(records)) return null;
+  const numericValues = [
+    value['uptimeMs'],
+    memory['rssBytes'],
+    memory['heapUsedBytes'],
+    memory['heapTotalBytes'],
+    memory['externalBytes'],
+    database['sizeBytes'],
+    records['total'],
+    records['hosts'],
+    records['devices'],
+    records['samples'],
+    records['events'],
+    records['appSettings'],
+    records['schemaMigrations'],
+  ];
+  if (
+    !numericValues.every((item) => typeof item === 'number' && Number.isFinite(item)) ||
+    typeof database['fileBacked'] !== 'boolean' ||
+    typeof value['collectedAt'] !== 'string'
+  ) {
+    return null;
+  }
+  return value as unknown as VoltInternals;
 }
 
 function responseError(payload: unknown, fallback: string): string {
