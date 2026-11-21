@@ -169,21 +169,20 @@ function requestSecretsApi(
 ): Promise<unknown> {
   const endpoint = version === 'v4' ? '/api/v4/secrets' : '/api/v3/secrets/raw';
   const secretsUrl = apiUrl(options.siteUrl, endpoint);
-  secretsUrl.search = new URLSearchParams({
+  const query = new URLSearchParams({
     [version === 'v4' ? 'projectId' : 'workspaceId']: options.projectId,
     environment: options.environment,
-    expandSecretReferences: 'true',
-    recursive: 'false',
     secretPath: options.secretPath,
-    viewSecretValue: 'true',
-  }).toString();
+  });
+  if (version === 'v3') query.set('expandSecretReferences', 'true');
+  secretsUrl.search = query.toString();
   return requestJson(
     secretsUrl,
     {
       method: 'GET',
       headers: { Authorization: `Bearer ${options.accessToken}` },
     },
-    `secret fetch for ${options.secretPath} (environment ${options.environment}, API v${version})`,
+    `secret fetch for ${options.secretPath} (environment ${options.environment}, API ${version})`,
   );
 }
 
@@ -263,7 +262,7 @@ async function requestJson(url: URL, init: RequestInit, operation: string): Prom
       );
     }
     if (!response.ok) {
-      const detail = init.method === 'GET' ? await readApiErrorMessage(response) : null;
+      const detail = init.method === 'GET' ? await readApiErrorSummary(response) : null;
       logInfisical('error', 'Infisical API request failed', {
         operation,
         status: response.status,
@@ -294,23 +293,24 @@ async function requestJson(url: URL, init: RequestInit, operation: string): Prom
   }
 }
 
-async function readApiErrorMessage(response: Response): Promise<string | null> {
+async function readApiErrorSummary(response: Response): Promise<string | null> {
   try {
     const payload: unknown = await response.json();
     if (!isRecord(payload)) return null;
-    const detail =
-      typeof payload['message'] === 'string'
-        ? payload['message']
-        : typeof payload['error'] === 'string'
-          ? payload['error']
-          : null;
-    if (!detail) return null;
-    const message = detail
+    const details = isRecord(payload['details'])
+      ? Object.entries(payload['details'])
+          .filter(([, value]) => ['string', 'number', 'boolean'].includes(typeof value))
+          .map(([key, value]) => `${key}=${String(value)}`)
+      : [];
+    const parts = [payload['message'], payload['error'], ...details].filter(
+      (value): value is string => typeof value === 'string' && value.length > 0,
+    );
+    const summary = [...new Set(parts)]
+      .join('; ')
       .replace(/[\u0000-\u001f\u007f]+/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
-    if (!message) return null;
-    return message.slice(0, 200);
+    return summary ? summary.slice(0, 300) : null;
   } catch {
     return null;
   }
