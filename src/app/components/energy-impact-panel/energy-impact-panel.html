@@ -8,144 +8,140 @@
       <p>{{ state.selectedDevice().name }} · based on UPS output power</p>
     </div>
     @if (energyImpact(); as impact) {
-      <span class="energy-timezone">Times shown in {{ impact.timeZone }}</span>
+    <span class="energy-timezone">Times shown in {{ impact.timeZone }}</span>
     }
   </header>
 
   @if (state.backendMode() === null || state.backendMode() === 'none') {
-    <p class="energy-impact-message">
-      Connect a backend with stored power readings to calculate energy cost and CO₂e.
-    </p>
+  <p class="energy-impact-message">
+    Connect a backend with stored power readings to calculate energy cost and CO₂e.
+  </p>
   } @else if (energyLoading() && !energyImpact()) {
-    <p class="energy-impact-message" role="status">Calculating energy impact…</p>
+  <p class="energy-impact-message" role="status">Calculating energy impact…</p>
   } @else if (energyImpact(); as impact) {
-    @if (energyError()) {
-      <p class="energy-impact-warning" role="status">
-        The latest refresh failed; showing the last available values.
-      </p>
-    }
-    @if (impact.pricePerKwh === null || impact.carbonIntensityGramsPerKwh === null) {
-      <p class="energy-impact-message">
-        Set your electricity price and grid emissions intensity in Settings to see complete cost and
-        footprint estimates.
-      </p>
-    }
+  @if (energyError()) {
+  <p class="energy-impact-warning" role="status">
+    The latest refresh failed; showing the last available values.
+  </p>
+  }
+  @if (impact.pricePerKwh === null || impact.carbonIntensityGramsPerKwh === null) {
+  <p class="energy-impact-message">
+    Set your electricity price and grid emissions intensity in Settings to see complete cost and
+    footprint estimates.
+  </p>
+  }
 
-    <div class="energy-periods">
-      @for (period of energyPeriods(); track period.id) {
-        <article class="energy-period">
-          <h3>{{ period.label }}</h3>
-          <strong>{{ moneyLabel(period.data.cost, impact.currency) }}</strong>
-          @if (period.projectionLabel && impact.pricePerKwh !== null) {
-            <div class="energy-projection">
-              <span>{{ period.projectionLabel }}</span>
-              <strong>{{ projectedCostLabel(period.data, impact.currency) }}</strong>
-            </div>
-          }
-          <dl>
-            <div>
-              <dt>Energy</dt>
-              <dd>{{ energyLabel(period.data.energyKwh) }}</dd>
-            </div>
-            <div>
-              <dt>Footprint</dt>
-              <dd>{{ footprintLabel(period.data.co2Kg) }}</dd>
-            </div>
-          </dl>
-          <p>{{ coverageLabel(period.data) }}</p>
-          @if (period.id !== 'hour' && hasLowCoverage(period.data)) {
-            <p class="energy-coverage-warning">{{ coverageWarning(period.data) }}</p>
-          }
-        </article>
+  <div class="energy-periods">
+    @for (period of energyPeriods(); track period.id) {
+    <article class="energy-period">
+      <h3>{{ period.label }}</h3>
+      <strong>{{ moneyLabel(period.data.cost, impact.currency) }}</strong>
+      @if (period.projectionLabel && impact.pricePerKwh !== null) {
+      <div class="energy-projection">
+        <span>{{ period.projectionLabel }}</span>
+        <strong>{{ projectedCostLabel(period.data, impact.currency) }}</strong>
+      </div>
       }
-    </div>
-
-    <div class="energy-details">
-      <section class="daypart-card" aria-labelledby="dayparts-heading">
-        <div class="energy-subheading">
+      <dl>
+        <div class="cost-grid">
           <div>
-            <h3 id="dayparts-heading">Today by time of day</h3>
-            <p>Local time · cost, energy, and CO₂e</p>
+            <dt>Energy</dt>
+            <dd>{{ energyLabel(period.data.energyKwh) }}</dd>
           </div>
-          <div
-            class="daypart-chart"
-            role="img"
-            [attr.aria-label]="daypartChartLabel()"
-            [style.background]="daypartChartBackground()"
-          >
-            @if (daypartTotalEnergy() !== null) {
-              <span>{{ energyLabel(daypartTotalEnergy()) }}</span>
-            } @else {
-              <span>No data</span>
-            }
-          </div>
+          <img class="bolt_icon" src="assets/bolt.png">
         </div>
-        <div class="daypart-list">
-          @for (part of impact.dayparts; track part.id) {
-            <div class="daypart-row">
-              <div class="daypart-name">
-                <strong>
-                  <span
-                    class="daypart-swatch"
-                    [class.daypart-swatch-night]="part.id === 'night'"
-                    [class.daypart-swatch-morning]="part.id === 'morning'"
-                    [class.daypart-swatch-afternoon]="part.id === 'afternoon'"
-                    [class.daypart-swatch-evening]="part.id === 'evening'"
-                  ></span>
-                  {{ part.label }}
-                </strong>
-                <span>{{ part.hours }}</span>
-              </div>
-              <strong>{{ moneyLabel(part.cost, impact.currency) }}</strong>
-              <span>{{ energyLabel(part.energyKwh) }}</span>
-              <span>{{ footprintLabel(part.co2Kg) }}</span>
-            </div>
+        <div class="cost-grid">
+          <div>
+            <dt>Footprint</dt>
+            <dd>{{ footprintLabel(period.data.co2Kg) }}</dd>
+          </div>
+          <img class="footprint_icon" src="assets/co2leaf.png">
+        </div>
+
+      </dl>
+      <p>{{ coverageLabel(period.data) }}</p>
+      @if (period.id !== 'hour' && hasLowCoverage(period.data)) {
+      <p class="energy-coverage-warning">{{ coverageWarning(period.data) }}</p>
+      }
+    </article>
+    }
+  </div>
+
+  <div class="energy-details">
+    <section class="daypart-card" aria-labelledby="dayparts-heading">
+      <div class="energy-subheading">
+        <div>
+          <h3 id="dayparts-heading">Today by time of day</h3>
+          <p>Local time · cost, energy, and CO₂e</p>
+        </div>
+        <div class="daypart-chart" role="img" [attr.aria-label]="daypartChartLabel()"
+          [style.background]="daypartChartBackground()">
+          @if (daypartTotalEnergy() !== null) {
+          <span>{{ energyLabel(daypartTotalEnergy()) }}</span>
+          } @else {
+          <span>No data</span>
           }
         </div>
-      </section>
-
-      <section class="energy-trend-card" aria-labelledby="energy-trend-heading">
-        <div class="energy-subheading">
-          <div>
-            <h3 id="energy-trend-heading">
-              {{ impact.pricePerKwh === null ? 'Daily energy trend' : 'Daily cost trend' }}
-            </h3>
-            <p>Last 30 days · hover a bar for the daily totals</p>
+      </div>
+      <div class="daypart-list">
+        @for (part of impact.dayparts; track part.id) {
+        <div class="daypart-row">
+          <div class="daypart-name">
+            <strong>
+              <span class="daypart-swatch" [class.daypart-swatch-night]="part.id === 'night'"
+                [class.daypart-swatch-morning]="part.id === 'morning'"
+                [class.daypart-swatch-afternoon]="part.id === 'afternoon'"
+                [class.daypart-swatch-evening]="part.id === 'evening'"></span>
+              {{ part.label }}
+            </strong>
+            <span>{{ part.hours }}</span>
           </div>
+          <strong>{{ moneyLabel(part.cost, impact.currency) }}</strong>
+          <span>{{ energyLabel(part.energyKwh) }}</span>
+          <span>{{ footprintLabel(part.co2Kg) }}</span>
         </div>
-        <div class="energy-trend-scroll">
-          <div class="energy-trend-bars">
-            @for (point of impact.dailyTrend; track point.date) {
-              <span
-                class="energy-trend-column"
-                [attr.title]="trendTooltip(point)"
-                [attr.aria-label]="trendTooltip(point)"
-              >
-                <span class="energy-trend-bar" [style.height]="trendBarHeight(point)"></span>
-              </span>
-            }
-          </div>
-        </div>
-        @if (impact.dailyTrend.length > 0) {
-          <div class="energy-trend-labels">
-            <span>{{ trendDateLabel(impact.dailyTrend[0]!.date) }}</span>
-            <span>Today</span>
-          </div>
         }
-      </section>
-    </div>
+      </div>
+    </section>
 
-    <p class="energy-impact-footnote">
-      Gaps over {{ impact.maxGapSeconds }} seconds are excluded. Costs and emissions estimate the
-      selected UPS output; actual utility draw can be higher due to UPS losses. Cost projections
-      extrapolate the average from intervals with usable readings.
-      @if (impact.periods.last30Days.estimatedEnergyKwh > 0) {
-        <span> Some power readings are UPS-estimated.</span>
+    <section class="energy-trend-card" aria-labelledby="energy-trend-heading">
+      <div class="energy-subheading">
+        <div>
+          <h3 id="energy-trend-heading">
+            {{ impact.pricePerKwh === null ? 'Daily energy trend' : 'Daily cost trend' }}
+          </h3>
+          <p>Last 30 days · hover a bar for the daily totals</p>
+        </div>
+      </div>
+      <div class="energy-trend-scroll">
+        <div class="energy-trend-bars">
+          @for (point of impact.dailyTrend; track point.date) {
+          <span class="energy-trend-column" [attr.title]="trendTooltip(point)" [attr.aria-label]="trendTooltip(point)">
+            <span class="energy-trend-bar" [style.height]="trendBarHeight(point)"></span>
+          </span>
+          }
+        </div>
+      </div>
+      @if (impact.dailyTrend.length > 0) {
+      <div class="energy-trend-labels">
+        <span>{{ trendDateLabel(impact.dailyTrend[0]!.date) }}</span>
+        <span>Today</span>
+      </div>
       }
-    </p>
+    </section>
+  </div>
+
+  <p class="energy-impact-footnote">
+    Gaps over {{ impact.maxGapSeconds }} seconds are excluded. Costs and emissions estimate the
+    selected UPS output; actual utility draw can be higher due to UPS losses. Cost projections
+    extrapolate the average from intervals with usable readings.
+    @if (impact.periods.last30Days.estimatedEnergyKwh > 0) {
+    <span> Some power readings are UPS-estimated.</span>
+    }
+  </p>
   } @else if (energyError()) {
-    <p class="energy-impact-warning" role="alert">{{ energyError() }}</p>
+  <p class="energy-impact-warning" role="alert">{{ energyError() }}</p>
   } @else {
-    <p class="energy-impact-message" role="status">Waiting for stored power readings…</p>
+  <p class="energy-impact-message" role="status">Waiting for stored power readings…</p>
   }
 </section>

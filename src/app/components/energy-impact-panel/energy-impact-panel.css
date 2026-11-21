@@ -33,16 +33,21 @@
   gap: 6px;
 }
 
-.footprint-title::after {
-  width: 9px;
-  height: 13px;
-  border-radius: 90% 0 90% 0;
-  background:
-    linear-gradient(48deg, transparent 46%, #237b4b 47% 53%, transparent 54%),
-    linear-gradient(135deg, #a2e879, #42bb70 70%);
-  box-shadow: 0 0 7px rgb(75 214 128 / 28%);
-  content: '';
-  transform: rotate(-38deg);
+.footprint_icon {
+  height: 3em;
+  margin-left: 1em;
+  opacity: 60%;
+}
+
+.bolt_icon {
+  height: 3em;
+  opacity: 60%;
+  margin-left: 1em;
+}
+
+.cost-grid {
+  display: flex;
+  flex-direction: row;
 }
 
 .energy-impact-heading p:not(.eyebrow) {
