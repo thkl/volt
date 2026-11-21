@@ -44,6 +44,12 @@ import {
   EnergyImpactConfigurationError,
   EnergyImpactService,
 } from '../energy/energy-impact-service.js';
+import {
+  ANALYTICS_RATE_LIMIT,
+  API_RATE_LIMIT,
+  INTEGRATION_TEST_RATE_LIMIT,
+  TokenBucketRateLimiter,
+} from './rate-limiter.js';
 
 export class ApiError extends Error {
   constructor(
@@ -79,12 +85,19 @@ export function createApp({
   energyImpactService,
 }: ApiDependencies): Express {
   const app = express();
+  const apiRateLimiter = new TokenBucketRateLimiter('API', API_RATE_LIMIT);
+  const analyticsRateLimiter = new TokenBucketRateLimiter('analytics', ANALYTICS_RATE_LIMIT);
+  const integrationTestRateLimiter = new TokenBucketRateLimiter(
+    'integration test',
+    INTEGRATION_TEST_RATE_LIMIT,
+  );
   if (config.trustedProxyCidrs.length > 0) {
     app.set('trust proxy', [...config.trustedProxyCidrs]);
   }
   app.disable('x-powered-by');
   app.use(noCache);
   app.use(cors(config));
+  app.use('/api', apiRateLimiter.middleware);
   app.use(express.json({ limit: '16kb', strict: true }));
   app.use('/api/auth', authManager.router());
   app.use('/api', authManager.middleware, authManager.csrfGuard);
@@ -148,7 +161,7 @@ export function createApp({
     }
   });
 
-  app.post('/api/alerts/test', async (request, response) => {
+  app.post('/api/alerts/test', integrationTestRateLimiter.middleware, async (request, response) => {
     if (!alertService)
       throw new ApiError(503, 'alerts_unavailable', 'Alert settings are unavailable');
     const channel = isRecord(request.body) ? request.body['channel'] : undefined;
@@ -181,17 +194,21 @@ export function createApp({
     }
   });
 
-  app.post('/api/integrations/influxdb/test', async (_request, response) => {
-    if (!influxDbService) {
-      throw new ApiError(503, 'integration_unavailable', 'InfluxDB integration is unavailable');
-    }
-    try {
-      await influxDbService.sendTestWrite();
-      response.json({ data: { sent: true } });
-    } catch (error) {
-      throw influxConfigurationError(error);
-    }
-  });
+  app.post(
+    '/api/integrations/influxdb/test',
+    integrationTestRateLimiter.middleware,
+    async (_request, response) => {
+      if (!influxDbService) {
+        throw new ApiError(503, 'integration_unavailable', 'InfluxDB integration is unavailable');
+      }
+      try {
+        await influxDbService.sendTestWrite();
+        response.json({ data: { sent: true } });
+      } catch (error) {
+        throw influxConfigurationError(error);
+      }
+    },
+  );
 
   app.get('/api/energy-impact/settings', (_request, response) => {
     if (!energyImpactService) {
@@ -268,36 +285,40 @@ export function createApp({
     response.json({ data: device });
   });
 
-  app.get('/api/devices/:id/history', (request, response) => {
-    const deviceId = request.params['id'] ?? '';
+  app.get('/api/devices/:id/history', analyticsRateLimiter.middleware, (request, response) => {
+    const deviceId = routeParam(request.params['id']);
     if (!store.getDevice(deviceId)) throw new ApiError(404, 'not_found', 'Device not found');
     const range = parseRange(request.query['range']);
     const metrics = parseMetrics(request.query['metrics']);
     response.json({ data: store.getHistory(deviceId, range, metrics) });
   });
 
-  app.get('/api/devices/:id/energy-impact', (request, response) => {
-    if (!energyImpactService) {
-      throw new ApiError(503, 'energy_impact_unavailable', 'Energy impact is unavailable');
-    }
-    const deviceId = request.params['id'] ?? '';
-    if (!store.getDevice(deviceId)) throw new ApiError(404, 'not_found', 'Device not found');
-    try {
-      const timeZone = queryString(request.query['timeZone']) ?? 'UTC';
-      response.json({ data: energyImpactService.getImpact(deviceId, timeZone) });
-    } catch (error) {
-      throw energyImpactConfigurationError(error);
-    }
-  });
+  app.get(
+    '/api/devices/:id/energy-impact',
+    analyticsRateLimiter.middleware,
+    (request, response) => {
+      if (!energyImpactService) {
+        throw new ApiError(503, 'energy_impact_unavailable', 'Energy impact is unavailable');
+      }
+      const deviceId = routeParam(request.params['id']);
+      if (!store.getDevice(deviceId)) throw new ApiError(404, 'not_found', 'Device not found');
+      try {
+        const timeZone = queryString(request.query['timeZone']) ?? 'UTC';
+        response.json({ data: energyImpactService.getImpact(deviceId, timeZone) });
+      } catch (error) {
+        throw energyImpactConfigurationError(error);
+      }
+    },
+  );
 
-  app.get('/api/devices/:id/outages', (request, response) => {
-    const deviceId = request.params['id'] ?? '';
+  app.get('/api/devices/:id/outages', analyticsRateLimiter.middleware, (request, response) => {
+    const deviceId = routeParam(request.params['id']);
     if (!store.getDevice(deviceId)) throw new ApiError(404, 'not_found', 'Device not found');
     const range = parseOutageRange(request.query['range']);
     response.json({ data: store.getOutageSummary(deviceId, range) });
   });
 
-  app.get('/api/events', (request, response) => {
+  app.get('/api/events', analyticsRateLimiter.middleware, (request, response) => {
     const deviceId = queryString(request.query['device']);
     if (deviceId && !store.getDevice(deviceId)) {
       throw new ApiError(404, 'not_found', 'Device not found');
@@ -464,6 +485,10 @@ function parseCursor(value: string | undefined): number | undefined {
 
 function queryString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
+}
+
+function routeParam(value: string | string[] | undefined): string {
+  return typeof value === 'string' ? value : '';
 }
 
 function parseNutHostInput(value: unknown): NutHostInput {
