@@ -93,22 +93,6 @@
     </nav>
 
     <div class="topbar-controls">
-      @if (state.devices().length > 1) {
-        <label class="topbar-select">
-          <span>UPS</span>
-          <select
-            [value]="state.selectedDeviceId()"
-            (change)="selectDevice($event)"
-            aria-label="Select UPS device"
-          >
-            @for (device of state.devices(); track device.id) {
-              <option [value]="device.id">
-                {{ device.name }}{{ device.hostName ? ' · ' + device.hostName : '' }}
-              </option>
-            }
-          </select>
-        </label>
-      }
 
       @if (state.isDemo()) {
         <label class="topbar-select demo-select">
