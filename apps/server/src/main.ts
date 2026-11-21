@@ -1,43 +1,61 @@
-import { loadConfig, type AppConfig } from './config.js';
+import { loadConfig } from './config.js';
 import { loadInfisicalAuthSecrets } from './infisical-secrets.js';
+import { resolveFileBackedSecrets } from './secret-env.js';
 import { createVoltServer } from './server.js';
 
-const infisicalSecrets = await loadInfisicalAuthSecrets(process.env);
-let config: AppConfig;
-if (infisicalSecrets) {
-  const secretEnvironmentNames = [
-    'AUTH_EMAIL',
-    'AUTH_PASSWORD',
-    'OIDC_CLIENT_ID',
-    'OIDC_CLIENT_SECRET',
-    'INFISICAL_CLIENT_ID',
-    'INFISICAL_CLIENT_ID_FILE',
-    'INFISICAL_CLIENT_SECRET',
-    'INFISICAL_CLIENT_SECRET_FILE',
-    'INFISICAL_MACHINE_ID',
-    'INFISICAL_MACHINE_ID_FILE',
-    'INFISICAL_MACHINE_TOKEN',
-    'INFISICAL_MACHINE_TOKEN_FILE',
-    'AUTH_EMAIL_FILE',
-    'AUTH_PASSWORD_FILE',
-    'OIDC_CLIENT_ID_FILE',
-    'OIDC_CLIENT_SECRET_FILE',
-  ];
-  const configEnvironment = { ...process.env };
-  for (const name of secretEnvironmentNames) {
-    delete configEnvironment[name];
-    delete process.env[name];
-  }
-  Object.assign(configEnvironment, {
-    AUTH_EMAIL: infisicalSecrets['AUTH_EMAIL'] ?? '',
-    AUTH_PASSWORD: infisicalSecrets['AUTH_PASSWORD'] ?? '',
-    OIDC_CLIENT_ID: infisicalSecrets['OIDC_CLIENT_ID'] ?? '',
-    OIDC_CLIENT_SECRET: infisicalSecrets['OIDC_CLIENT_SECRET'] ?? '',
-  });
-  config = loadConfig(configEnvironment);
-} else {
-  config = loadConfig(process.env);
+const environmentWithFiles = resolveFileBackedSecrets(process.env);
+const hasEmail = Boolean(environmentWithFiles['AUTH_EMAIL']?.trim());
+const localPasswordSignInComplete =
+  hasEmail && Boolean(environmentWithFiles['AUTH_PASSWORD']?.length);
+const localOidcSignInComplete =
+  hasEmail &&
+  Boolean(
+    environmentWithFiles['OIDC_ISSUER']?.trim() &&
+    environmentWithFiles['OIDC_CLIENT_ID']?.trim() &&
+    environmentWithFiles['OIDC_CLIENT_SECRET']?.trim() &&
+    environmentWithFiles['OIDC_REDIRECT_URI']?.trim(),
+  );
+const infisicalSecrets = await loadInfisicalAuthSecrets(process.env, {
+  auth: !localPasswordSignInComplete && !localOidcSignInComplete,
+  oidc: !localOidcSignInComplete,
+});
+const configEnvironment = { ...environmentWithFiles };
+const authSettingNames = [
+  'AUTH_EMAIL',
+  'AUTH_PASSWORD',
+  'OIDC_CLIENT_ID',
+  'OIDC_CLIENT_SECRET',
+  'OIDC_ISSUER',
+  'OIDC_REDIRECT_URI',
+  'OIDC_CLIENT_AUTH_METHOD',
+];
+for (const name of authSettingNames) {
+  const localValue = configEnvironment[name];
+  const localValueIsSet =
+    name === 'AUTH_PASSWORD' ? Boolean(localValue?.length) : Boolean(localValue?.trim());
+  if (localValueIsSet) continue;
+  const infisicalValue = infisicalSecrets[name];
+  if (infisicalValue) configEnvironment[name] = infisicalValue;
 }
+const infisicalCredentialNames = [
+  'INFISICAL_CLIENT_ID',
+  'INFISICAL_CLIENT_ID_FILE',
+  'INFISICAL_CLIENT_SECRET',
+  'INFISICAL_CLIENT_SECRET_FILE',
+  'INFISICAL_MACHINE_ID',
+  'INFISICAL_MACHINE_ID_FILE',
+  'INFISICAL_MACHINE_TOKEN',
+  'INFISICAL_MACHINE_TOKEN_FILE',
+];
+for (const name of infisicalCredentialNames) {
+  delete configEnvironment[name];
+  delete process.env[name];
+}
+for (const name of [...authSettingNames, ...authSettingNames.map((name) => `${name}_FILE`)]) {
+  delete process.env[name];
+}
+
+const config = loadConfig(configEnvironment);
 const app = createVoltServer(config);
 
 await app.listen();

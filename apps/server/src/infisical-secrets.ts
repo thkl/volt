@@ -1,12 +1,24 @@
 import { resolveEnvironmentSecret, type EnvironmentSecretName } from './secret-env.js';
 
 const AUTH_SECRET_NAMES = ['AUTH_EMAIL', 'AUTH_PASSWORD'] as const;
-const OIDC_SECRET_NAMES = ['OIDC_CLIENT_ID', 'OIDC_CLIENT_SECRET'] as const;
+const OIDC_SECRET_NAMES = [
+  'OIDC_CLIENT_ID',
+  'OIDC_CLIENT_SECRET',
+  'OIDC_ISSUER',
+  'OIDC_REDIRECT_URI',
+  'OIDC_CLIENT_AUTH_METHOD',
+] as const;
 const REQUEST_TIMEOUT_MS = 10_000;
+
+export interface InfisicalSecretLookup {
+  auth: boolean;
+  oidc: boolean;
+}
 
 export async function loadInfisicalAuthSecrets(
   env: NodeJS.ProcessEnv,
-): Promise<Record<string, string> | null> {
+  lookup: InfisicalSecretLookup,
+): Promise<Record<string, string>> {
   const clientIdCredential = firstSecretValue(env, ['INFISICAL_CLIENT_ID', 'INFISICAL_MACHINE_ID']);
   const clientSecretCredential = firstSecretValue(env, [
     'INFISICAL_CLIENT_SECRET',
@@ -15,8 +27,20 @@ export async function loadInfisicalAuthSecrets(
   const clientId = clientIdCredential?.value;
   const clientSecret = clientSecretCredential?.value;
   const projectId = env['INFISICAL_PROJECT_ID']?.trim() || undefined;
+  const requestedGroups = [lookup.auth ? 'auth' : null, lookup.oidc ? 'oidc' : null].filter(
+    (group): group is 'auth' | 'oidc' => group !== null,
+  );
+  if (requestedGroups.length === 0) {
+    logInfisical('info', 'Environment and file settings are complete; skipping Infisical lookup');
+    return {};
+  }
   const enabled = Boolean(clientId || clientSecret || projectId);
-  if (!enabled) return null;
+  if (!enabled) {
+    logInfisical('info', 'Infisical is not configured; skipping missing optional settings', {
+      requestedGroups,
+    });
+    return {};
+  }
 
   const credentialPreviewEnabled = isEnabled(env['INFISICAL_DEBUG']);
   logInfisical('info', 'Infisical secret loading configured', {
@@ -34,31 +58,45 @@ export async function loadInfisicalAuthSecrets(
   }
 
   if (!clientId || !clientSecret || !projectId) {
-    logInfisical('error', 'Infisical configuration is incomplete', {
+    logInfisical('warn', 'Infisical configuration is incomplete; skipping Infisical lookup', {
+      requestedGroups,
       clientIdPresent: Boolean(clientId),
       clientSecretPresent: Boolean(clientSecret),
       projectIdPresent: Boolean(projectId),
     });
-    throw new Error('Infisical requires a Universal Auth client ID, client secret, and project ID');
+    return {};
   }
 
-  const siteUrl = normalizeSiteUrl(env['INFISICAL_SITE_URL']?.trim() || 'https://us.infisical.com');
-  const environment = env['INFISICAL_ENVIRONMENT']?.trim() || 'prod';
-  const defaultSecretPath = normalizeSecretPath(env['INFISICAL_SECRET_PATH']?.trim() || '/');
-  const authSecretPath = normalizeSecretPath(
-    env['INFISICAL_AUTH_SECRET_PATH']?.trim() || defaultSecretPath,
-  );
-  const oidcSecretPath = normalizeSecretPath(
-    env['INFISICAL_OIDC_SECRET_PATH']?.trim() || defaultSecretPath,
-  );
+  let siteUrl: string;
+  let environment: string;
+  let authSecretPath: string;
+  let oidcSecretPath: string;
+  try {
+    siteUrl = normalizeSiteUrl(env['INFISICAL_SITE_URL']?.trim() || 'https://us.infisical.com');
+    environment = env['INFISICAL_ENVIRONMENT']?.trim() || 'prod';
+    const defaultSecretPath = normalizeSecretPath(env['INFISICAL_SECRET_PATH']?.trim() || '/');
+    authSecretPath = lookup.auth
+      ? normalizeSecretPath(env['INFISICAL_AUTH_SECRET_PATH']?.trim() || defaultSecretPath)
+      : defaultSecretPath;
+    oidcSecretPath = lookup.oidc
+      ? normalizeSecretPath(env['INFISICAL_OIDC_SECRET_PATH']?.trim() || defaultSecretPath)
+      : defaultSecretPath;
+  } catch (error) {
+    logInfisical('warn', 'Infisical settings are invalid; skipping Infisical lookup', {
+      reason: error instanceof Error ? error.message : 'invalid settings',
+    });
+    return {};
+  }
   logInfisical('info', 'Infisical secret loading started', {
     site: new URL(siteUrl).origin,
     environment,
+    requestedGroups,
     authSecretPath,
     oidcSecretPath,
   });
 
-  let secrets: Record<string, string>;
+  const secrets: Record<string, string> = {};
+  let accessToken: string;
   try {
     const loginUrl = apiUrl(siteUrl, '/api/v1/auth/universal-auth/login');
     const loginPayload = await requestJson(
@@ -77,22 +115,30 @@ export async function loadInfisicalAuthSecrets(
     ) {
       throw new InfisicalRequestError('Universal Auth login returned an invalid response');
     }
+    accessToken = loginPayload['accessToken'];
+  } catch (error) {
+    logInfisical('warn', 'Infisical login failed; continuing with available settings', {
+      reason: error instanceof Error ? error.message : 'unexpected error',
+    });
+    return {};
+  }
 
-    const secretNamesByPath = new Map<string, Set<string>>();
-    for (const [path, names] of [
-      [authSecretPath, AUTH_SECRET_NAMES],
-      [oidcSecretPath, OIDC_SECRET_NAMES],
-    ] as const) {
-      const pathNames = secretNamesByPath.get(path) ?? new Set<string>();
-      for (const name of names) pathNames.add(name);
-      secretNamesByPath.set(path, pathNames);
-    }
+  const configuredGroups = [
+    ...(lookup.auth ? ([[authSecretPath, AUTH_SECRET_NAMES]] as const) : []),
+    ...(lookup.oidc ? ([[oidcSecretPath, OIDC_SECRET_NAMES]] as const) : []),
+  ];
+  const secretNamesByPath = new Map<string, Set<string>>();
+  for (const [path, names] of configuredGroups) {
+    const pathNames = secretNamesByPath.get(path) ?? new Set<string>();
+    for (const name of names) pathNames.add(name);
+    secretNamesByPath.set(path, pathNames);
+  }
 
-    secrets = {};
-    for (const [secretPath, names] of secretNamesByPath) {
+  for (const [secretPath, names] of secretNamesByPath) {
+    try {
       const response = await fetchSecretPath({
         siteUrl,
-        accessToken: loginPayload['accessToken'],
+        accessToken,
         projectId,
         environment,
         secretPath,
@@ -113,21 +159,18 @@ export async function loadInfisicalAuthSecrets(
           secrets[value['secretKey']] = value['secretValue'];
         }
       }
+    } catch (error) {
+      logInfisical('warn', 'Infisical path lookup failed; skipping values from this path', {
+        environment,
+        secretPath,
+        reason: error instanceof Error ? error.message : 'unexpected error',
+      });
     }
-  } catch (error) {
-    if (error instanceof InfisicalRequestError) {
-      throw new Error(`Infisical ${error.message}`);
-    }
-    throw new Error('Infisical authentication secrets could not be loaded');
   }
 
-  if (!secrets['AUTH_EMAIL']) {
-    throw new Error('Infisical secrets must include AUTH_EMAIL');
-  }
-  if (!secrets['AUTH_PASSWORD'] && !(secrets['OIDC_CLIENT_ID'] && secrets['OIDC_CLIENT_SECRET'])) {
-    throw new Error('Infisical secrets must include AUTH_PASSWORD or both OIDC client credentials');
-  }
-
+  logInfisical('info', 'Infisical secret loading completed', {
+    loadedSecretNames: Object.keys(secrets),
+  });
   return secrets;
 }
 
@@ -226,11 +269,11 @@ function isEnabled(value: string | undefined): boolean {
 }
 
 function logInfisical(
-  level: 'debug' | 'info' | 'error',
+  level: 'debug' | 'info' | 'warn' | 'error',
   message: string,
-  fields: Record<string, unknown>,
+  fields: Record<string, unknown> = {},
 ): void {
-  const log = level === 'error' ? console.error : console.log;
+  const log = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
   log(JSON.stringify({ level, message, ...fields }));
 }
 

@@ -79,8 +79,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       .filter(Boolean),
   );
   const trustedProxyCidrs = parseTrustedProxyCidrs(env['TRUSTED_PROXY_CIDRS']);
-  const authEmail = nonEmpty(env['AUTH_EMAIL'])?.toLowerCase() ?? null;
-  const authPassword =
+  let authEmail = nonEmpty(env['AUTH_EMAIL'])?.toLowerCase() ?? null;
+  let authPassword =
     env['AUTH_PASSWORD'] && env['AUTH_PASSWORD'].length > 0 ? env['AUTH_PASSWORD'] : null;
   const oidcIssuer = nonEmpty(env['OIDC_ISSUER']) ?? null;
   const oidcClientId = nonEmpty(env['OIDC_CLIENT_ID']) ?? null;
@@ -88,64 +88,83 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const oidcRedirectUri = nonEmpty(env['OIDC_REDIRECT_URI']) ?? null;
   const oidcClientAuthMethod = nonEmpty(env['OIDC_CLIENT_AUTH_METHOD']) ?? null;
   const oidcValues = [oidcIssuer, oidcClientId, oidcClientSecret, oidcRedirectUri];
-  const oidcConfigured = oidcValues.some(Boolean) || Boolean(oidcClientAuthMethod);
+  const oidcRequested = oidcValues.some(Boolean);
 
-  if (authPassword && !authEmail) {
-    throw new Error('AUTH_EMAIL is required when AUTH_PASSWORD is configured');
-  }
-  if (oidcConfigured && oidcValues.some((value) => !value)) {
-    throw new Error(
-      'OIDC_ISSUER, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET and OIDC_REDIRECT_URI are required together',
-    );
-  }
-  if (
-    oidcClientAuthMethod &&
-    oidcClientAuthMethod !== 'client_secret_basic' &&
-    oidcClientAuthMethod !== 'client_secret_post'
-  ) {
-    throw new Error('OIDC_CLIENT_AUTH_METHOD must be client_secret_basic or client_secret_post');
-  }
-  if ((authPassword || oidcConfigured) && !authEmail) {
-    throw new Error('AUTH_EMAIL is required when authentication is configured');
-  }
-  if (authEmail && !authPassword && !oidcConfigured) {
-    throw new Error('AUTH_PASSWORD or OIDC settings are required when AUTH_EMAIL is set');
-  }
   if (authEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(authEmail)) {
-    throw new Error('AUTH_EMAIL must be a valid email address');
+    logAuthWarning('AUTH_EMAIL is invalid; disabling authentication settings that use it');
+    authEmail = null;
+  }
+  if (authPassword && !authEmail) {
+    logAuthWarning(
+      'Password sign-in is incomplete; AUTH_EMAIL is unavailable, skipping password sign-in',
+    );
+    authPassword = null;
   }
 
   let oidc: AppConfig['auth']['oidc'] = null;
-  if (oidcIssuer && oidcClientId && oidcClientSecret && oidcRedirectUri) {
-    const issuerUrl = parseUrl(oidcIssuer, 'OIDC_ISSUER');
-    const redirectUrl = parseUrl(oidcRedirectUri, 'OIDC_REDIRECT_URI');
-    if (
-      issuerUrl.protocol !== 'https:' &&
-      !(issuerUrl.protocol === 'http:' && isLoopback(issuerUrl.hostname))
-    ) {
-      throw new Error('OIDC_ISSUER must use HTTPS (HTTP is allowed for localhost development)');
+  if (oidcRequested) {
+    const missing = [
+      ['OIDC_ISSUER', oidcIssuer],
+      ['OIDC_CLIENT_ID', oidcClientId],
+      ['OIDC_CLIENT_SECRET', oidcClientSecret],
+      ['OIDC_REDIRECT_URI', oidcRedirectUri],
+      ['AUTH_EMAIL', authEmail],
+    ]
+      .filter(([, value]) => !value)
+      .map(([name]) => name);
+
+    if (missing.length > 0) {
+      logAuthWarning('OIDC settings are incomplete; skipping OIDC sign-in', { missing });
+    } else {
+      try {
+        const issuerUrl = parseUrl(oidcIssuer!, 'OIDC_ISSUER');
+        const redirectUrl = parseUrl(oidcRedirectUri!, 'OIDC_REDIRECT_URI');
+        if (
+          issuerUrl.protocol !== 'https:' &&
+          !(issuerUrl.protocol === 'http:' && isLoopback(issuerUrl.hostname))
+        ) {
+          throw new Error('OIDC_ISSUER must use HTTPS (HTTP is allowed for localhost development)');
+        }
+        if (
+          redirectUrl.protocol !== 'https:' &&
+          !(redirectUrl.protocol === 'http:' && isLoopback(redirectUrl.hostname))
+        ) {
+          throw new Error(
+            'OIDC_REDIRECT_URI must use HTTPS (HTTP is allowed for localhost development)',
+          );
+        }
+        if (redirectUrl.pathname !== '/api/auth/oidc/callback') {
+          throw new Error('OIDC_REDIRECT_URI must end with /api/auth/oidc/callback');
+        }
+        if (
+          oidcClientAuthMethod &&
+          oidcClientAuthMethod !== 'client_secret_basic' &&
+          oidcClientAuthMethod !== 'client_secret_post'
+        ) {
+          logAuthWarning('OIDC_CLIENT_AUTH_METHOD is invalid; using client_secret_basic');
+        }
+        oidc = {
+          issuer: oidcIssuer!,
+          clientId: oidcClientId!,
+          clientSecret: oidcClientSecret!,
+          clientAuthMethod:
+            oidcClientAuthMethod === 'client_secret_post'
+              ? 'client_secret_post'
+              : 'client_secret_basic',
+          redirectUri: redirectUrl.href,
+        };
+      } catch (error) {
+        logAuthWarning('OIDC settings are invalid; skipping OIDC sign-in', {
+          reason: error instanceof Error ? error.message : 'invalid settings',
+        });
+      }
     }
-    if (
-      redirectUrl.protocol !== 'https:' &&
-      !(redirectUrl.protocol === 'http:' && isLoopback(redirectUrl.hostname))
-    ) {
-      throw new Error(
-        'OIDC_REDIRECT_URI must use HTTPS (HTTP is allowed for localhost development)',
-      );
-    }
-    if (redirectUrl.pathname !== '/api/auth/oidc/callback') {
-      throw new Error('OIDC_REDIRECT_URI must end with /api/auth/oidc/callback');
-    }
-    oidc = {
-      issuer: oidcIssuer,
-      clientId: oidcClientId,
-      clientSecret: oidcClientSecret,
-      clientAuthMethod:
-        oidcClientAuthMethod === 'client_secret_post'
-          ? 'client_secret_post'
-          : 'client_secret_basic',
-      redirectUri: redirectUrl.href,
-    };
+  } else if (oidcClientAuthMethod) {
+    logAuthWarning('OIDC_CLIENT_AUTH_METHOD has no OIDC credentials or endpoints; ignoring it');
+  }
+
+  if (!authPassword && !oidc) {
+    logAuthWarning('No complete sign-in method is configured; authentication is disabled');
   }
   const cookieSecure = parseBoolean(
     env['AUTH_COOKIE_SECURE'],
@@ -222,6 +241,10 @@ function resolveFromProject(path: string): string {
 function nonEmpty(value: string | undefined): string | undefined {
   const normalized = value?.trim();
   return normalized ? normalized : undefined;
+}
+
+function logAuthWarning(message: string, fields: Record<string, unknown> = {}): void {
+  console.warn(JSON.stringify({ level: 'warn', message, ...fields }));
 }
 
 function parseTrustedProxyCidrs(value: string | undefined): string[] {
