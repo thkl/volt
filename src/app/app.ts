@@ -40,6 +40,8 @@ export class App implements OnInit, OnDestroy {
   private readonly settingsDialog = viewChild<ElementRef<HTMLDialogElement>>('settingsDialog');
   readonly hostSaving = signal(false);
   readonly hostError = signal('');
+  readonly demoUpsSaving = signal(false);
+  readonly demoUpsError = signal('');
   readonly editingHostId = signal<string | null>(null);
   readonly hostFormType = signal<'nut' | 'homeassistant'>('nut');
   readonly alertSettings = signal<AlertSettings | null>(null);
@@ -354,14 +356,34 @@ export class App implements OnInit, OnDestroy {
     }
   }
 
+  async addDemoUps(): Promise<void> {
+    this.demoUpsSaving.set(true);
+    this.demoUpsError.set('');
+    try {
+      await this.liveUpdates.addDemoUps();
+    } catch (error) {
+      this.demoUpsError.set(error instanceof Error ? error.message : 'Demo UPS could not be added');
+    } finally {
+      this.demoUpsSaving.set(false);
+    }
+  }
+
   async removeHost(hostId: string): Promise<void> {
     this.hostError.set('');
+    this.demoUpsError.set('');
     try {
       await this.liveUpdates.removeHost(hostId);
       if (this.editingHostId() === hostId) this.cancelHostEdit();
     } catch (error) {
-      this.hostError.set(error instanceof Error ? error.message : 'Host could not be removed');
+      const message = error instanceof Error ? error.message : 'Host could not be removed';
+      const host = this.state.hosts().find((item) => item.id === hostId);
+      if (this.isDemoFleetHost(host)) this.demoUpsError.set(message);
+      else this.hostError.set(message);
     }
+  }
+
+  isDemoFleetHost(host: BackendHost | undefined): boolean {
+    return host?.sourceType === 'demo' && typeof host.endpointConfig['demoUpsId'] === 'string';
   }
 
   hostAddress(hostId: string): string {
@@ -371,7 +393,9 @@ export class App implements OnInit, OnDestroy {
       const url = host.endpointConfig['url'];
       return typeof url === 'string' ? url : '';
     }
-    if (host.sourceType !== 'nut') return 'Built-in simulator';
+    if (host.sourceType !== 'nut') {
+      return this.isDemoFleetHost(host) ? 'Simulated for UI checks' : 'Built-in simulator';
+    }
     const address = host.endpointConfig['host'];
     const port = host.endpointConfig['port'];
     return typeof address === 'string'
@@ -382,6 +406,7 @@ export class App implements OnInit, OnDestroy {
   sourceName(host: BackendHost): string {
     if (host.sourceType === 'homeassistant') return 'Home Assistant';
     if (host.sourceType === 'nut') return 'NUT';
+    if (this.isDemoFleetHost(host)) return 'Demo UPS';
     return 'Demo simulator';
   }
 

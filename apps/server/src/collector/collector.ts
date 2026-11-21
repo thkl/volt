@@ -1,4 +1,4 @@
-import { DemoSource, DEMO_DEVICES } from '../demo/demo-source.js';
+import { DemoSource, DEMO_DEVICES, type DemoDevice } from '../demo/demo-source.js';
 import { stableDeviceId } from '../domain/ids.js';
 import { NutConnection, NutProtocolError, type NutUps } from '../nut/protocol.js';
 import { normalizeUps } from '../nut/normalize.js';
@@ -28,15 +28,20 @@ export interface Collector {
 }
 
 export class DemoCollector implements Collector {
-  readonly source = new DemoSource();
+  readonly source: DemoSource;
   private timer: NodeJS.Timeout | null = null;
   private isRunning = false;
   private lastPollAt: string | null = null;
+  private readonly devices: readonly DemoDevice[];
 
   constructor(
     private readonly ingestion: IngestionService,
     private readonly pollIntervalMs: number,
-  ) {}
+    devices: readonly DemoDevice[] = DEMO_DEVICES,
+  ) {
+    this.devices = devices;
+    this.source = new DemoSource(devices);
+  }
 
   start(): void {
     if (this.timer) return;
@@ -58,6 +63,10 @@ export class DemoCollector implements Collector {
       connected: true,
       lastPollAt: this.lastPollAt,
       lastError: null,
+      phase: 'ready',
+      discoveredUps: this.devices.length,
+      upsNames: this.devices.map((device) => device.name),
+      lastDiscoveryAt: this.lastPollAt,
     };
   }
 
@@ -73,7 +82,7 @@ export class DemoCollector implements Collector {
     try {
       const now = Date.now();
       for (const snapshot of this.source.snapshots(now)) {
-        const device = DEMO_DEVICES.find((candidate) => candidate.id === snapshot.deviceId);
+        const device = this.devices.find((candidate) => candidate.id === snapshot.deviceId);
         this.ingestion.ingest(snapshot, device?.name ?? snapshot.deviceName);
       }
       this.lastPollAt = new Date(now).toISOString();

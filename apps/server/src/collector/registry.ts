@@ -6,6 +6,7 @@ import {
 import type { AppConfig } from '../config.js';
 import type { HostCredentials, NutCredentials } from '../security/credentials.js';
 import { DemoCollector, NutCollector, type Collector } from './collector.js';
+import type { DemoDevice } from '../demo/demo-source.js';
 import { HomeAssistantCollector } from './homeassistant-collector.js';
 import type { IngestionService } from './ingestion-service.js';
 
@@ -53,7 +54,20 @@ export function createDefaultCollectorRegistry(): CollectorRegistry {
   return new CollectorRegistry([
     {
       type: 'demo',
-      create: ({ ingestion, config }) => new DemoCollector(ingestion, config.pollIntervalMs),
+      create: ({ ingestion, config, hostName, endpointConfig }) => {
+        const demoUpsId = endpointConfig['demoUpsId'];
+        if (typeof demoUpsId === 'string') {
+          const device: DemoDevice = {
+            id: `demo-ups-${demoUpsId}`,
+            name: hostName,
+            model: 'Demo UPS · 1500 VA',
+            loadOffset: numericOffset(endpointConfig['loadOffset']),
+            powerOffset: numericOffset(endpointConfig['powerOffset']),
+          };
+          return new DemoCollector(ingestion, config.pollIntervalMs, [device]);
+        }
+        return new DemoCollector(ingestion, config.pollIntervalMs);
+      },
     },
     {
       type: 'nut',
@@ -82,4 +96,8 @@ function asNutCredentials(credentials: HostCredentials | null): NutCredentials |
     throw new Error('NUT credentials must contain a username and password');
   }
   return { username, password };
+}
+
+function numericOffset(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }

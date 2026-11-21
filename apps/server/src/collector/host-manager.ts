@@ -167,10 +167,43 @@ export class HostManager extends EventEmitter implements Collector {
   }
 
   selectDemoScenario(scenario: string): boolean {
-    const demo = [...this.active.values()].find(
-      ({ collector }) => collector instanceof DemoCollector,
-    )?.collector;
-    return demo instanceof DemoCollector ? demo.selectScenario(scenario) : false;
+    const demos = [...this.active.values()]
+      .map(({ collector }) => collector)
+      .filter((collector): collector is DemoCollector => collector instanceof DemoCollector);
+    if (demos.length === 0) return false;
+    return demos.map((demo) => demo.selectScenario(scenario)).every(Boolean);
+  }
+
+  addDemoUps(): HostSummary {
+    const existingDemoUps = this.store
+      .listHosts()
+      .filter(
+        (host) =>
+          host.sourceType === 'demo' && typeof host.endpointConfig['demoUpsId'] === 'string',
+      );
+    const sequence = existingDemoUps.length + 1;
+    const id = randomUUID();
+    const host: HostRecord = {
+      id,
+      name: `UI test UPS ${sequence}`,
+      sourceType: 'demo',
+      endpointConfig: {
+        demoUpsId: id,
+        loadOffset: ((sequence - 1) % 7) - 3,
+        powerOffset: (((sequence - 1) % 9) - 4) * 12,
+      },
+      encryptedCredentials: null,
+      credentialsConfigured: false,
+      enabled: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    this.store.upsertHost(host);
+    const saved = this.store.getHostRecord(host.id);
+    if (!saved) throw new Error('Demo UPS was not saved');
+    this.startHost(saved);
+    this.emitHostsChanged();
+    return publicHost(saved);
   }
 
   addNutHost(input: NutHostInput): HostSummary {
@@ -276,7 +309,9 @@ export class HostManager extends EventEmitter implements Collector {
   removeHost(id: string): void {
     const host = this.store.getHostRecord(id);
     if (!host || !host.enabled) throw new Error('Host not found');
-    if (host.sourceType === 'demo') throw new Error('The demo source cannot be removed');
+    if (host.sourceType === 'demo' && typeof host.endpointConfig['demoUpsId'] !== 'string') {
+      throw new Error('The built-in demo source cannot be removed');
+    }
     this.stopHost(id, 'Host was removed');
     this.startErrors.delete(id);
     this.store.disableHost(id);
@@ -333,8 +368,12 @@ export class HostManager extends EventEmitter implements Collector {
 
   private disableDemoWhenAddingFirstRealSource(sourceName: string): void {
     if (this.store.listEnabledHosts().some((item) => item.sourceType !== 'demo')) return;
-    for (const demoId of this.store.disableHostsByType('demo')) {
-      this.stopHost(demoId, `Demo source was replaced by a ${sourceName} connection`);
+    for (const host of this.store.listEnabledHostRecords()) {
+      if (host.sourceType !== 'demo' || typeof host.endpointConfig['demoUpsId'] === 'string') {
+        continue;
+      }
+      this.stopHost(host.id, `Demo source was replaced by a ${sourceName} connection`);
+      this.store.disableHost(host.id);
     }
   }
 

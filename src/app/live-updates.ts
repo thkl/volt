@@ -302,6 +302,10 @@ export class LiveUpdates {
     await this.hostRequest(`/api/hosts/${encodeURIComponent(id)}`, 'DELETE');
   }
 
+  async addDemoUps(): Promise<BackendHost> {
+    return this.mutateHost('/api/demo/ups', 'POST', {});
+  }
+
   async getHistory(
     deviceId: string,
     range: '1h' | '24h' | '7d' | '30d',

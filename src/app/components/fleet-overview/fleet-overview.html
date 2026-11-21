@@ -3,7 +3,7 @@
     <div>
       <p class="eyebrow">FLEET</p>
       <h2 id="fleet-overview-title">UPS fleet</h2>
-      <p>Current state, output power, and trailing 24-hour use</p>
+      <p>Select a UPS to show its details below.</p>
     </div>
     <span class="fleet-count">
       {{ rows().length }} {{ rows().length === 1 ? 'UPS' : 'UPS devices' }}
@@ -13,70 +13,24 @@
     </span>
   </header>
 
-  <div class="fleet-grid">
+  <div class="fleet-tabs" role="group" aria-label="Select a UPS">
     @for (row of rows(); track row.device.id) {
       <button
         type="button"
-        class="fleet-card"
+        class="fleet-tab"
         [class.selected]="state.selectedDeviceId() === row.device.id"
-        [attr.aria-label]="'Show ' + row.device.name + ' details · ' + row.stateLabel"
+        [attr.aria-pressed]="state.selectedDeviceId() === row.device.id"
+        [attr.aria-label]="row.device.name + ', load ' + loadLabel(row.snapshot)"
         (click)="selectDevice(row.device.id)"
       >
-        <span class="fleet-card-heading">
-          <span class="fleet-device-copy">
-            <span class="fleet-host">{{
-              row.device.hostName ?? (state.isDemo() ? 'Demo source' : 'UPS host')
-            }}</span>
-            <strong>{{ row.device.name }}</strong>
-          </span>
-          <span
-            class="fleet-state"
-            [class.status-good]="row.stateTone === 'good'"
-            [class.status-warning]="row.stateTone === 'warning'"
-            [class.status-critical]="row.stateTone === 'critical'"
-            [class.status-muted]="row.stateTone === 'muted'"
-          >
-            <span aria-hidden="true"></span>{{ row.stateLabel }}
-          </span>
+        <strong>{{ row.device.name }}</strong>
+        <span class="fleet-load">
+          <span>Load</span>
+          <strong>{{ loadLabel(row.snapshot) }}</strong>
         </span>
-
-        <span class="fleet-metrics">
-          <span class="fleet-metric">
-            <span>Power draw</span>
-            <strong>{{ powerLabel(row.snapshot) }}</strong>
-            @if (row.snapshot.powerEstimated) {
-              <small>UPS-estimated</small>
-            }
-          </span>
-          <span class="fleet-metric">
-            <span>Energy · 24h</span>
-            <strong>{{ energyLabel(row) }}</strong>
-          </span>
-          <span class="fleet-metric fleet-cost">
-            <span>Energy cost · 24h</span>
-            <strong>{{ costLabel(row) }}</strong>
-          </span>
-        </span>
-
-        @if (coverageLabel(row)) {
-          <span class="fleet-coverage" [class.coverage-warning]="hasLowCoverage(row)">
-            {{ coverageLabel(row) }}
-          </span>
-          @if (hasLowCoverage(row)) {
-            <span class="fleet-coverage-note">
-              Incomplete readings; the 24-hour energy and cost may be understated.
-            </span>
-          }
-        } @else if (state.backendMode() === null) {
-          <span class="fleet-coverage">24-hour figures need stored readings</span>
-        } @else if (energyErrors()[row.device.id]) {
-          <span class="fleet-coverage coverage-warning">24-hour figures unavailable</span>
-        } @else if (energyLoading()) {
-          <span class="fleet-coverage">Loading 24-hour figures…</span>
-        }
       </button>
+    } @empty {
+      <p class="fleet-empty">No UPS devices are reporting.</p>
     }
   </div>
-
-  <p class="fleet-hint">Select a UPS to show its detailed power flow and history below.</p>
 </section>

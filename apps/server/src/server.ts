@@ -121,14 +121,12 @@ function seedConfiguredHosts(store: Store, config: AppConfig, credentialKey: str
       },
       config.clearNutCredentials,
     );
-    for (const demoId of store.disableHostsByType('demo')) {
-      store.disableHost(demoId);
-    }
+    disableBuiltInDemoHosts(store);
     return;
   }
 
   if (!config.demoMode) {
-    store.disableHostsByType('demo');
+    disableBuiltInDemoHosts(store);
     return;
   }
 
@@ -141,5 +139,13 @@ function seedConfiguredHosts(store: Store, config: AppConfig, credentialKey: str
       encryptedCredentials: null,
       enabled: true,
     });
+  }
+}
+
+function disableBuiltInDemoHosts(store: Store): void {
+  for (const host of store.listEnabledHostRecords()) {
+    if (host.sourceType === 'demo' && typeof host.endpointConfig['demoUpsId'] !== 'string') {
+      store.disableHost(host.id);
+    }
   }
 }

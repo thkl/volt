@@ -341,6 +341,14 @@ export function createApp({
     response.json({ data: { scenario: collector.getDemoScenario() } });
   });
 
+  app.post('/api/demo/ups', (_request, response) => {
+    try {
+      response.status(201).json({ data: collector.addDemoUps() });
+    } catch (error) {
+      throw hostMutationError(error);
+    }
+  });
+
   app.use('/api', (_request, _response) => {
     throw new ApiError(404, 'not_found', 'API endpoint not found');
   });

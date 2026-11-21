@@ -207,12 +207,27 @@
           <p class="eyebrow">DATA SOURCES</p>
           <h3 id="hosts-title">Collector connections</h3>
         </div>
+        <button
+          class="small-button"
+          type="button"
+          [disabled]="demoUpsSaving()"
+          (click)="addDemoUps()"
+        >
+          {{ demoUpsSaving() ? 'Adding…' : 'Add demo UPS' }}
+        </button>
       </div>
+      <p class="form-hint">
+        Add simulated UPS units for fleet UI checks. Removing one hides it from the fleet and keeps
+        its history.
+      </p>
+      @if (demoUpsError()) {
+        <p class="form-error" role="alert">{{ demoUpsError() }}</p>
+      }
 
       @if (state.hosts().length === 0) {
         <p class="empty-hosts">
-          No connections configured yet. Add a NUT server or Home Assistant instance to show live
-          battery readings.
+          No connections configured yet. Add a NUT server, Home Assistant instance or demo UPS to
+          show battery readings.
         </p>
       } @else {
         <ul class="host-list">
@@ -238,11 +253,17 @@
                   </small>
                 }
               </div>
-              @if (host.sourceType === 'nut' || host.sourceType === 'homeassistant') {
+              @if (
+                host.sourceType === 'nut' ||
+                host.sourceType === 'homeassistant' ||
+                isDemoFleetHost(host)
+              ) {
                 <div class="host-actions">
-                  <button class="small-button" type="button" (click)="editHost(host.id)">
-                    Edit
-                  </button>
+                  @if (host.sourceType === 'nut' || host.sourceType === 'homeassistant') {
+                    <button class="small-button" type="button" (click)="editHost(host.id)">
+                      Edit
+                    </button>
+                  }
                   <button
                     class="small-button remove-button"
                     type="button"
@@ -252,7 +273,9 @@
                   </button>
                 </div>
               } @else {
-                <span class="source-tag">Built in</span>
+                <span class="source-tag">{{
+                  isDemoFleetHost(host) ? 'Demo UPS' : 'Built in'
+                }}</span>
               }
             </li>
           }
