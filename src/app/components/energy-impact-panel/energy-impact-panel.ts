@@ -114,7 +114,7 @@ export class EnergyImpactPanel implements OnInit, OnDestroy {
       style: 'currency',
       currency,
       minimumFractionDigits: 2,
-      maximumFractionDigits: 4,
+      maximumFractionDigits: 2,
     }).format(value);
   }
 
