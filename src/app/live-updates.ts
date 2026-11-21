@@ -216,10 +216,13 @@ export class LiveUpdates {
   readonly outageRevision = signal(0);
   readonly eventRevision = signal(0);
   readonly energyImpactRevision = signal(0);
+  readonly energyImpactUpdates = signal<Record<string, EnergyImpact>>({});
+  readonly energyImpactErrors = signal<Record<string, string>>({});
   private socket: WebSocket | null = null;
   private reconnectTimer: number | undefined;
   private reconnectAttempts = 0;
   private stopped = false;
+  private energyImpactSubscription: { deviceId: string; timeZone: string } | null = null;
   private readonly latestHistoryReadings = signal<Record<string, BackendHistoryReading>>({});
 
   getLatestHistoryReading(deviceId: string): BackendHistoryReading | null {
@@ -236,6 +239,7 @@ export class LiveUpdates {
     socket.addEventListener('open', () => {
       this.reconnectAttempts = 0;
       this.state.setApiConnected(true);
+      this.sendEnergyImpactSubscription();
     });
     socket.addEventListener('message', (event) => this.receive(event.data));
     socket.addEventListener('error', () => socket.close());
@@ -505,20 +509,29 @@ export class LiveUpdates {
     return payload['data'];
   }
 
-  async getEnergyImpact(deviceId: string): Promise<EnergyImpact> {
-    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-    const query = new URLSearchParams({ timeZone });
-    const response = await fetch(
-      `/api/devices/${encodeURIComponent(deviceId)}/energy-impact?${query}`,
-    );
-    const payload: unknown = await response.json().catch(() => null);
-    if (!response.ok) {
-      throw new Error(responseError(payload, 'Energy impact could not be loaded'));
+  subscribeEnergyImpact(deviceId: string | null): void {
+    this.energyImpactSubscription = deviceId
+      ? {
+          deviceId,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+        }
+      : null;
+    if (deviceId) {
+      this.energyImpactErrors.update((current) => {
+        const next = { ...current };
+        delete next[deviceId];
+        return next;
+      });
     }
-    if (!isRecord(payload) || !isEnergyImpact(payload['data'])) {
-      throw new Error('The server returned invalid energy impact data');
-    }
-    return payload['data'];
+    this.sendEnergyImpactSubscription();
+  }
+
+  energyImpactFor(deviceId: string): EnergyImpact | null {
+    return this.energyImpactUpdates()[deviceId] ?? null;
+  }
+
+  energyImpactErrorFor(deviceId: string): string {
+    return this.energyImpactErrors()[deviceId] ?? '';
   }
 
   private receive(raw: unknown): void {
@@ -527,6 +540,34 @@ export class LiveUpdates {
     try {
       message = JSON.parse(raw) as Record<string, unknown>;
     } catch {
+      return;
+    }
+
+    if (message['type'] === 'energy-impact') {
+      const impact = message['data'];
+      if (!isEnergyImpact(impact)) return;
+      this.energyImpactUpdates.update((current) => ({
+        ...current,
+        [impact.deviceId]: impact,
+      }));
+      this.energyImpactErrors.update((current) => {
+        const next = { ...current };
+        delete next[impact.deviceId];
+        return next;
+      });
+      return;
+    }
+
+    if (message['type'] === 'energy-impact-error') {
+      const deviceId = message['deviceId'];
+      if (typeof deviceId !== 'string') return;
+      this.energyImpactErrors.update((current) => ({
+        ...current,
+        [deviceId]:
+          typeof message['message'] === 'string'
+            ? message['message']
+            : 'Energy impact could not be loaded',
+      }));
       return;
     }
 
@@ -550,6 +591,7 @@ export class LiveUpdates {
         scenario,
       );
       this.retainHistoryReadings(devices);
+      this.retainEnergyImpacts(devices);
       for (const device of devices) {
         if (device.snapshot) {
           this.state.setBackendSnapshot(normalizeSnapshot(device.snapshot));
@@ -578,6 +620,7 @@ export class LiveUpdates {
         typeof message['scenario'] === 'string' ? message['scenario'] : null,
       );
       this.retainHistoryReadings(devices);
+      this.retainEnergyImpacts(devices);
       for (const device of devices) {
         if (device.snapshot) {
           this.state.setBackendSnapshot(normalizeSnapshot(device.snapshot));
@@ -640,6 +683,29 @@ export class LiveUpdates {
     const activeDeviceIds = new Set(devices.map((device) => device.id));
     this.latestHistoryReadings.update((current) =>
       Object.fromEntries(Object.entries(current).filter(([id]) => activeDeviceIds.has(id))),
+    );
+  }
+
+  private retainEnergyImpacts(devices: BackendDevice[]): void {
+    const activeDeviceIds = new Set(devices.map((device) => device.id));
+    this.energyImpactUpdates.update((current) =>
+      Object.fromEntries(Object.entries(current).filter(([id]) => activeDeviceIds.has(id))),
+    );
+    this.energyImpactErrors.update((current) =>
+      Object.fromEntries(Object.entries(current).filter(([id]) => activeDeviceIds.has(id))),
+    );
+  }
+
+  private sendEnergyImpactSubscription(): void {
+    const socket = this.socket;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    const subscription = this.energyImpactSubscription;
+    socket.send(
+      JSON.stringify(
+        subscription
+          ? { type: 'subscribe-energy-impact', ...subscription }
+          : { type: 'unsubscribe-energy-impact' },
+      ),
     );
   }
 

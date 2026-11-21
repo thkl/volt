@@ -6,16 +6,19 @@ import type { CollectorHealth } from '../collector/collector.js';
 import type { DeviceSummary, HostSummary, UpsSnapshot } from '../domain/models.js';
 import { Store } from '../storage/store.js';
 import { AuthManager } from '../auth/auth-manager.js';
+import type { EnergyImpactService } from '../energy/energy-impact-service.js';
 
 interface ClientState {
   alive: boolean;
   sessionToken: string | undefined;
+  energyImpactSubscription: { deviceId: string; timeZone: string } | null;
 }
 
 export class WebSocketHub {
   private readonly server: WebSocketServer;
   private readonly clientStates = new WeakMap<WebSocket, ClientState>();
   private readonly heartbeat: NodeJS.Timeout;
+  private readonly energyRefresh: NodeJS.Timeout;
   private readonly onSnapshot = (snapshot: UpsSnapshot, events: unknown) => {
     this.broadcast({
       type: 'snapshot',
@@ -32,6 +35,16 @@ export class WebSocketHub {
     collector: CollectorHealth;
     sources: HostDiagnostic[];
   }) => {
+    const activeDeviceIds = new Set(update.devices.map((device) => device.id));
+    for (const client of this.server.clients) {
+      const state = this.clientStates.get(client);
+      if (
+        state?.energyImpactSubscription &&
+        !activeDeviceIds.has(state.energyImpactSubscription.deviceId)
+      ) {
+        state.energyImpactSubscription = null;
+      }
+    }
     this.broadcast({
       type: 'hosts',
       mode: update.collector.mode,
@@ -49,6 +62,7 @@ export class WebSocketHub {
     private readonly store: Store,
     private readonly collector: HostManager,
     private readonly authManager = new AuthManager(config),
+    private readonly energyImpactService?: EnergyImpactService,
   ) {
     this.server = new WebSocketServer({ noServer: true, maxPayload: 1024 });
     this.server.on('connection', (client, request) => this.handleConnection(client, request));
@@ -63,10 +77,13 @@ export class WebSocketHub {
     httpServer.on('upgrade', (request, socket, head) => this.handleUpgrade(request, socket, head));
     this.heartbeat = setInterval(() => this.sendHeartbeat(), 25_000);
     this.heartbeat.unref();
+    this.energyRefresh = setInterval(() => this.refreshEnergySubscriptions(), 60_000);
+    this.energyRefresh.unref();
   }
 
   close(): void {
     clearInterval(this.heartbeat);
+    clearInterval(this.energyRefresh);
     this.collector.off('snapshot', this.onSnapshot);
     this.collector.off('hosts', this.onHosts);
     this.collector.off('health', this.onHealth);
@@ -112,18 +129,13 @@ export class WebSocketHub {
     this.clientStates.set(client, {
       alive: true,
       sessionToken: this.authManager.sessionTokenFromHeader(request.headers.cookie),
+      energyImpactSubscription: null,
     });
     client.on('pong', () => {
       const state = this.clientStates.get(client);
       if (state) state.alive = true;
     });
-    client.on('message', (message) => {
-      if (message.toString() === '{"type":"ping"}') {
-        this.send(client, { type: 'pong', at: new Date().toISOString() });
-      } else {
-        client.close(1008, 'The Volt stream is read-only');
-      }
-    });
+    client.on('message', (message) => this.handleMessage(client, message.toString()));
     client.on('error', () => client.terminate());
     this.send(client, {
       type: 'initial',
@@ -163,6 +175,130 @@ export class WebSocketHub {
     }
   }
 
+  private handleMessage(client: WebSocket, raw: string): void {
+    if (raw === '{"type":"ping"}') {
+      this.send(client, { type: 'pong', at: new Date().toISOString() });
+      return;
+    }
+
+    let message: Record<string, unknown>;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (!isRecord(parsed)) throw new Error('Invalid message');
+      message = parsed;
+    } catch {
+      client.close(1008, 'Invalid message');
+      return;
+    }
+
+    const state = this.clientStates.get(client);
+    if (message['type'] === 'unsubscribe-energy-impact' && state) {
+      state.energyImpactSubscription = null;
+      return;
+    }
+    if (message['type'] === 'subscribe-energy-impact' && state) {
+      const deviceId = message['deviceId'];
+      if (typeof deviceId !== 'string' || deviceId.length > 255) {
+        this.send(client, {
+          type: 'energy-impact-error',
+          deviceId: typeof deviceId === 'string' ? deviceId : '',
+          message: 'Choose a valid UPS device',
+        });
+        return;
+      }
+      const activeDevice = this.store.listDevices().some((device) => device.id === deviceId);
+      if (!activeDevice) {
+        this.send(client, {
+          type: 'energy-impact-error',
+          deviceId,
+          message: 'UPS device is not available',
+        });
+        return;
+      }
+      const timeZone = message['timeZone'];
+      if (typeof timeZone !== 'string' || timeZone.length > 128) {
+        this.send(client, {
+          type: 'energy-impact-error',
+          deviceId,
+          message: 'A valid time zone is required',
+        });
+        return;
+      }
+      state.energyImpactSubscription = { deviceId, timeZone };
+      this.sendEnergyImpact(client, state.energyImpactSubscription);
+      return;
+    }
+
+    client.close(1008, 'Unsupported message');
+  }
+
+  private refreshEnergySubscriptions(): void {
+    if (!this.energyImpactService) return;
+    const activeDeviceIds = new Set(this.store.listDevices().map((device) => device.id));
+    const subscriptions = new Map<
+      string,
+      { subscription: NonNullable<ClientState['energyImpactSubscription']>; clients: WebSocket[] }
+    >();
+    for (const client of this.server.clients) {
+      if (client.readyState !== WebSocket.OPEN) continue;
+      const subscription = this.clientStates.get(client)?.energyImpactSubscription;
+      if (!subscription) continue;
+      if (!activeDeviceIds.has(subscription.deviceId)) {
+        const state = this.clientStates.get(client);
+        if (state) state.energyImpactSubscription = null;
+        continue;
+      }
+      const key = `${subscription.deviceId}\u0000${subscription.timeZone}`;
+      const current = subscriptions.get(key) ?? { subscription, clients: [] };
+      current.clients.push(client);
+      subscriptions.set(key, current);
+    }
+
+    for (const { subscription, clients } of subscriptions.values()) {
+      try {
+        const data = this.energyImpactService.getImpact(
+          subscription.deviceId,
+          subscription.timeZone,
+        );
+        for (const client of clients) {
+          this.send(client, { type: 'energy-impact', data });
+        }
+      } catch {
+        for (const client of clients) {
+          this.send(client, {
+            type: 'energy-impact-error',
+            deviceId: subscription.deviceId,
+            message: 'Energy impact could not be calculated',
+          });
+        }
+      }
+    }
+  }
+
+  private sendEnergyImpact(
+    client: WebSocket,
+    subscription: NonNullable<ClientState['energyImpactSubscription']>,
+  ): void {
+    if (!this.energyImpactService) {
+      this.send(client, {
+        type: 'energy-impact-error',
+        deviceId: subscription.deviceId,
+        message: 'Energy impact is unavailable',
+      });
+      return;
+    }
+    try {
+      const data = this.energyImpactService.getImpact(subscription.deviceId, subscription.timeZone);
+      this.send(client, { type: 'energy-impact', data });
+    } catch {
+      this.send(client, {
+        type: 'energy-impact-error',
+        deviceId: subscription.deviceId,
+        message: 'Energy impact could not be calculated',
+      });
+    }
+  }
+
   private broadcast(message: unknown): void {
     for (const client of this.server.clients) {
       if (client.readyState === WebSocket.OPEN) this.send(client, message);
@@ -185,4 +321,8 @@ export class WebSocketHub {
       return false;
     }
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

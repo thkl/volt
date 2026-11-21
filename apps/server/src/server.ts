@@ -62,7 +62,14 @@ export function createVoltServer(config: AppConfig): VoltServer {
     energyImpactService,
   });
   const httpServer = createServer(app);
-  const websocketHub = new WebSocketHub(httpServer, config, store, collector, authManager);
+  const websocketHub = new WebSocketHub(
+    httpServer,
+    config,
+    store,
+    collector,
+    authManager,
+    energyImpactService,
+  );
 
   return {
     httpServer,

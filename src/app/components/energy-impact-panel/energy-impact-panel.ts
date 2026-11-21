@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
+import { Component, OnDestroy, computed, effect, inject, signal } from '@angular/core';
 import { DemoState } from '../../demo-state';
 import { LiveUpdates } from '../../live-updates';
 import type { EnergyImpact, EnergyPeriodImpact } from '../../live-updates';
@@ -8,7 +8,7 @@ import type { EnergyImpact, EnergyPeriodImpact } from '../../live-updates';
   styleUrl: './energy-impact-panel.css',
   templateUrl: './energy-impact-panel.html',
 })
-export class EnergyImpactPanel implements OnInit, OnDestroy {
+export class EnergyImpactPanel implements OnDestroy {
   private readonly lowCoverageThresholdPercent = 80;
   readonly state = inject(DemoState);
   private readonly liveUpdates = inject(LiveUpdates);
@@ -54,58 +54,39 @@ export class EnergyImpactPanel implements OnInit, OnDestroy {
       ),
     );
   });
-  private refreshTimer: number | undefined;
-  private energyRequestId = 0;
   private readonly energySelectionEffect = effect(() => {
     const mode = this.state.backendMode();
     const deviceId = this.state.selectedDeviceId();
     this.liveUpdates.energyImpactRevision();
     if (mode === 'nut' || mode === 'homeassistant' || mode === 'multi' || mode === 'demo') {
-      void this.refreshEnergyImpact(deviceId);
+      this.liveUpdates.subscribeEnergyImpact(deviceId);
+      this.energyLoading.set(true);
+      this.energyError.set('');
+      if (this.energyImpact()?.deviceId !== deviceId) this.energyImpact.set(null);
     } else {
-      this.energyRequestId += 1;
+      this.liveUpdates.subscribeEnergyImpact(null);
       this.energyImpact.set(null);
       this.energyLoading.set(false);
     }
   });
 
-  ngOnInit(): void {
-    this.refreshTimer = window.setInterval(() => {
-      const mode = this.state.backendMode();
-      if (mode === 'nut' || mode === 'homeassistant' || mode === 'multi' || mode === 'demo') {
-        void this.refreshEnergyImpact(this.state.selectedDeviceId());
-      }
-    }, 60_000);
-  }
+  private readonly energyPushEffect = effect(() => {
+    const deviceId = this.state.selectedDeviceId();
+    const impact = this.liveUpdates.energyImpactFor(deviceId);
+    if (impact) {
+      this.energyImpact.set(impact);
+      this.energyLoading.set(false);
+      this.energyError.set('');
+    }
+    const error = this.liveUpdates.energyImpactErrorFor(deviceId);
+    if (error) {
+      this.energyError.set(error);
+      this.energyLoading.set(false);
+    }
+  });
 
   ngOnDestroy(): void {
-    if (this.refreshTimer !== undefined) window.clearInterval(this.refreshTimer);
-    this.energyRequestId += 1;
-  }
-
-  async refreshEnergyImpact(deviceId = this.state.selectedDeviceId()): Promise<void> {
-    const mode = this.state.backendMode();
-    if (mode !== 'nut' && mode !== 'multi' && mode !== 'demo') {
-      this.energyImpact.set(null);
-      this.energyLoading.set(false);
-      return;
-    }
-    const requestId = ++this.energyRequestId;
-    this.energyLoading.set(true);
-    this.energyError.set('');
-    if (this.energyImpact()?.deviceId !== deviceId) this.energyImpact.set(null);
-    try {
-      const impact = await this.liveUpdates.getEnergyImpact(deviceId);
-      if (requestId === this.energyRequestId) this.energyImpact.set(impact);
-    } catch (error) {
-      if (requestId === this.energyRequestId) {
-        this.energyError.set(
-          error instanceof Error ? error.message : 'Energy impact could not be loaded',
-        );
-      }
-    } finally {
-      if (requestId === this.energyRequestId) this.energyLoading.set(false);
-    }
+    this.liveUpdates.subscribeEnergyImpact(null);
   }
 
   moneyLabel(value: number | null, currency: string): string {
