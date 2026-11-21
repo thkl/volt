@@ -94,7 +94,13 @@ export function createApp({
   if (config.trustedProxyCidrs.length > 0) {
     app.set('trust proxy', [...config.trustedProxyCidrs]);
   }
-  app.disable('x-powered-by');
+  app.disable("x-powered-by");
+  // Prevent the admin UI and OIDC pages from being embedded by untrusted sites.
+  app.use((_req, res, next) => {
+    res.setHeader("Content-Security-Policy", "frame-ancestors 'none'");
+    res.setHeader("X-Frame-Options", "DENY");
+    next();
+  });
   app.use(noCache);
   app.use(cors(config));
   app.use('/api', apiRateLimiter.middleware);
