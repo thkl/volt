@@ -312,9 +312,22 @@ export class HostManager extends EventEmitter implements Collector {
     if (host.sourceType === 'demo' && typeof host.endpointConfig['demoUpsId'] !== 'string') {
       throw new Error('The built-in demo source cannot be removed');
     }
-    this.stopHost(id, 'Host was removed');
+    const deletedDeviceIds = this.store
+      .listDevices()
+      .filter((device) => device.hostId === id)
+      .map((device) => device.id);
+    const active = this.active.get(id);
+    active?.collector.stop();
+    active?.ingestion.stop();
+    this.active.delete(id);
     this.startErrors.delete(id);
-    this.store.disableHost(id);
+    try {
+      if (!this.store.deleteHostAndData(id)) throw new Error('Host was not deleted');
+    } catch (error) {
+      if (active) this.startHost(host);
+      throw error;
+    }
+    this.emit('devices-deleted', deletedDeviceIds);
     this.emitHostsChanged();
   }
 

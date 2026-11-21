@@ -319,6 +319,26 @@ export class Store {
     return Number(result.changes) > 0;
   }
 
+  deleteHostAndData(id: string): boolean {
+    this.database.exec('BEGIN IMMEDIATE');
+    try {
+      const devices = this.database
+        .prepare('SELECT id FROM devices WHERE host_id = ?')
+        .all(id) as unknown as Array<{ id: string }>;
+      const deleteShutdownPlan = this.database.prepare('DELETE FROM app_settings WHERE key = ?');
+      for (const device of devices) {
+        deleteShutdownPlan.run(`shutdown-readiness:${device.id}`);
+      }
+      this.database.prepare('DELETE FROM devices WHERE host_id = ?').run(id);
+      const result = this.database.prepare('DELETE FROM hosts WHERE id = ?').run(id);
+      this.database.exec('COMMIT');
+      return Number(result.changes) > 0;
+    } catch (error) {
+      this.database.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
   disableHostsByType(sourceType: DataSourceType): string[] {
     const rows = this.database
       .prepare('SELECT id FROM hosts WHERE source_type = ? AND enabled = 1')

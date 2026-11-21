@@ -23,7 +23,7 @@ Open Settings to add, edit or remove NUT and Home Assistant connections and conf
 
 The API exposes host management, collector types, device snapshots, bounded history, paginated events, shutdown-readiness plans, alert settings and test delivery, and `WebSocket /api/ws`. `GET /api/health` reports per-source diagnostics; `GET /api/hosts/:id/health` returns one host's connection phase, discovered UPS names, last poll and error code. The UI distinguishes devices by host and updates as collectors discover or lose UPS devices. NUT, Home Assistant and demo collectors are implemented; MQTT is planned. UniFi UPS devices can be monitored through their NUT support. Adding the first NUT or Home Assistant connection replaces the demo source. The demo state selector controls the backend simulator while it is connected, and continues using local fixtures if the server is unavailable.
 
-Use **Add demo UPS** in Settings to add any number of simulated units for fleet UI checks. Removing one hides it from the fleet while keeping its samples and events in SQLite.
+Use **Add demo UPS** in Settings to add any number of simulated units for fleet UI checks. Deleting a demo UPS removes its Volt history and device settings. Deleting a NUT or Home Assistant source removes data for every UPS on that source. Data already sent to InfluxDB remains there.
 
 `GET /api/devices/:id/outages?range=30d` summarizes battery-power episodes over 24 hours, 7, 30 or 90 days. Confirmed duration totals omit active and uncertain episodes.
 

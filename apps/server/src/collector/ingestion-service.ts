@@ -8,6 +8,8 @@ export interface IngestionOptions {
 }
 
 export class IngestionService extends EventEmitter {
+  private stopped = false;
+
   constructor(
     private readonly store: Store,
     private readonly options: IngestionOptions,
@@ -15,7 +17,12 @@ export class IngestionService extends EventEmitter {
     super();
   }
 
+  stop(): void {
+    this.stopped = true;
+  }
+
   ingest(snapshot: UpsSnapshot, description = snapshot.deviceName): void {
+    if (this.stopped) return;
     const previous = this.store.getDevice(snapshot.deviceId)?.snapshot ?? null;
     const events = previous ? detectTransitions(previous, snapshot, new Date().toISOString()) : [];
     const observedAtMs = Date.parse(snapshot.observedAt);
@@ -31,6 +38,7 @@ export class IngestionService extends EventEmitter {
   }
 
   markUnavailable(deviceId: string, detail: string, freshness: Freshness = 'stale'): void {
+    if (this.stopped) return;
     const device = this.store.getDevice(deviceId);
     const previous = device?.snapshot;
     if (!device || !previous || previous.freshness !== 'fresh') return;

@@ -124,6 +124,12 @@ export class AlertService {
   private readonly startupDeviceIds: Set<string>;
   private readonly onSnapshot = (snapshot: UpsSnapshot, events: AlertEvent[], hostId: string) =>
     this.handleSnapshot(snapshot, events, hostId);
+  private readonly onDevicesDeleted = (deviceIds: string[]) => {
+    for (const deviceId of deviceIds) {
+      this.startupDeviceIds.delete(deviceId);
+      this.runtimeBelowThreshold.delete(deviceId);
+    }
+  };
 
   constructor(
     private readonly store: Store,
@@ -137,10 +143,12 @@ export class AlertService {
       : { ...EMPTY_SECRETS };
     this.startupDeviceIds = new Set(store.listDevices().map((device) => device.id));
     collector.on('snapshot', this.onSnapshot);
+    collector.on('devices-deleted', this.onDevicesDeleted);
   }
 
   close(): void {
     this.collector.off('snapshot', this.onSnapshot);
+    this.collector.off('devices-deleted', this.onDevicesDeleted);
   }
 
   getSettings(): AlertSettingsView {

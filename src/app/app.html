@@ -217,8 +217,9 @@
         </button>
       </div>
       <p class="form-hint">
-        Add simulated UPS units for fleet UI checks. Removing one hides it from the fleet and keeps
-        its history.
+        Add simulated UPS units for fleet UI checks. Deleting one removes its history and settings
+        from Volt. Deleting a NUT or Home Assistant source also deletes data for all UPS devices on
+        that source. Data already sent to InfluxDB remains there.
       </p>
       @if (demoUpsError()) {
         <p class="form-error" role="alert">{{ demoUpsError() }}</p>
@@ -268,8 +269,11 @@
                     class="small-button remove-button"
                     type="button"
                     (click)="removeHost(host.id)"
+                    [attr.aria-label]="
+                      (isDemoFleetHost(host) ? 'Delete UPS ' : 'Delete source ') + host.name
+                    "
                   >
-                    Remove
+                    {{ isDemoFleetHost(host) ? 'Delete UPS' : 'Delete source' }}
                   </button>
                 </div>
               } @else {
