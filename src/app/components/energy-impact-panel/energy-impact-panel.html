@@ -2,7 +2,9 @@
   <header class="energy-impact-heading">
     <div>
       <p class="eyebrow">ENERGY ESTIMATES</p>
-      <h2 id="energy-impact-heading">Energy cost &amp; CO₂ footprint</h2>
+      <h2 id="energy-impact-heading">
+        Energy cost &amp; <span class="footprint-title">CO₂ footprint</span>
+      </h2>
       <p>{{ state.selectedDevice().name }} · based on UPS output power</p>
     </div>
     @if (energyImpact(); as impact) {
@@ -34,6 +36,12 @@
         <article class="energy-period">
           <h3>{{ period.label }}</h3>
           <strong>{{ moneyLabel(period.data.cost, impact.currency) }}</strong>
+          @if (period.projectionLabel && impact.pricePerKwh !== null) {
+            <div class="energy-projection">
+              <span>{{ period.projectionLabel }}</span>
+              <strong>{{ projectedCostLabel(period.data, impact.currency) }}</strong>
+            </div>
+          }
           <dl>
             <div>
               <dt>Energy</dt>
@@ -45,6 +53,9 @@
             </div>
           </dl>
           <p>{{ coverageLabel(period.data) }}</p>
+          @if (period.id !== 'hour' && hasLowCoverage(period.data)) {
+            <p class="energy-coverage-warning">{{ coverageWarning(period.data) }}</p>
+          }
         </article>
       }
     </div>
@@ -56,12 +67,33 @@
             <h3 id="dayparts-heading">Today by time of day</h3>
             <p>Local time · cost, energy, and CO₂e</p>
           </div>
+          <div
+            class="daypart-chart"
+            role="img"
+            [attr.aria-label]="daypartChartLabel()"
+            [style.background]="daypartChartBackground()"
+          >
+            @if (daypartTotalEnergy() !== null) {
+              <span>{{ energyLabel(daypartTotalEnergy()) }}</span>
+            } @else {
+              <span>No data</span>
+            }
+          </div>
         </div>
         <div class="daypart-list">
           @for (part of impact.dayparts; track part.id) {
             <div class="daypart-row">
               <div class="daypart-name">
-                <strong>{{ part.label }}</strong>
+                <strong>
+                  <span
+                    class="daypart-swatch"
+                    [class.daypart-swatch-night]="part.id === 'night'"
+                    [class.daypart-swatch-morning]="part.id === 'morning'"
+                    [class.daypart-swatch-afternoon]="part.id === 'afternoon'"
+                    [class.daypart-swatch-evening]="part.id === 'evening'"
+                  ></span>
+                  {{ part.label }}
+                </strong>
                 <span>{{ part.hours }}</span>
               </div>
               <strong>{{ moneyLabel(part.cost, impact.currency) }}</strong>
@@ -105,7 +137,8 @@
 
     <p class="energy-impact-footnote">
       Gaps over {{ impact.maxGapSeconds }} seconds are excluded. Costs and emissions estimate the
-      selected UPS output; actual utility draw can be higher due to UPS losses.
+      selected UPS output; actual utility draw can be higher due to UPS losses. Cost projections
+      extrapolate the average from intervals with usable readings.
       @if (impact.periods.last30Days.estimatedEnergyKwh > 0) {
         <span> Some power readings are UPS-estimated.</span>
       }

@@ -9,6 +9,7 @@ import type { EnergyImpact, EnergyPeriodImpact } from '../../live-updates';
   templateUrl: './energy-impact-panel.html',
 })
 export class EnergyImpactPanel implements OnInit, OnDestroy {
+  private readonly lowCoverageThresholdPercent = 80;
   readonly state = inject(DemoState);
   private readonly liveUpdates = inject(LiveUpdates);
   readonly energyImpact = signal<EnergyImpact | null>(null);
@@ -18,10 +19,30 @@ export class EnergyImpactPanel implements OnInit, OnDestroy {
     const impact = this.energyImpact();
     if (!impact) return [];
     return [
-      { id: 'hour', label: 'Last hour', data: impact.periods.lastHour },
-      { id: 'day', label: 'Last 24 hours', data: impact.periods.last24Hours },
-      { id: 'month', label: 'Last 30 days', data: impact.periods.last30Days },
+      {
+        id: 'hour',
+        label: 'Last hour',
+        projectionLabel: null,
+        data: impact.periods.lastHour,
+      },
+      {
+        id: 'day',
+        label: 'Last 24 hours',
+        projectionLabel: 'Projected 24h cost',
+        data: impact.periods.last24Hours,
+      },
+      {
+        id: 'month',
+        label: 'Last 30 days',
+        projectionLabel: 'Projected 30d cost',
+        data: impact.periods.last30Days,
+      },
     ];
+  });
+  readonly daypartTotalEnergy = computed(() => {
+    const impact = this.energyImpact();
+    if (!impact || !impact.dayparts.some((part) => part.energyKwh !== null)) return null;
+    return impact.dayparts.reduce((total, part) => total + (part.energyKwh ?? 0), 0);
   });
   readonly energyTrendMaximum = computed(() => {
     const impact = this.energyImpact();
@@ -105,6 +126,48 @@ export class EnergyImpactPanel implements OnInit, OnDestroy {
     if (value === null) return 'Not configured';
     if (value < 1) return `${Math.round(value * 1000)} g CO₂e`;
     return `${value.toFixed(3)} kg CO₂e`;
+  }
+
+  projectedCostLabel(period: EnergyPeriodImpact, currency: string): string {
+    if (period.cost === null || period.coveragePercent <= 0) return 'Collecting data';
+    const projectedCost = period.cost / (period.coveragePercent / 100);
+    return this.moneyLabel(projectedCost, currency);
+  }
+
+  hasLowCoverage(period: EnergyPeriodImpact): boolean {
+    return period.coveragePercent < this.lowCoverageThresholdPercent;
+  }
+
+  coverageWarning(period: EnergyPeriodImpact): string {
+    if (period.coveragePercent <= 0) {
+      return 'No usable readings for this period yet, so the total and projection are unavailable.';
+    }
+    return `Only ${period.coveragePercent.toFixed(1)}% of this period has usable readings. The measured total may be low; the projection extrapolates the observed average and may be inaccurate.`;
+  }
+
+  daypartChartBackground(): string {
+    const impact = this.energyImpact();
+    const colors = ['#4dbb78', '#79d98a', '#e3c35c', '#dd9460'];
+    const energies = impact?.dayparts.map((part) => part.energyKwh ?? 0) ?? [];
+    const total = energies.reduce((sum, energy) => sum + energy, 0);
+    if (total <= 0) return 'conic-gradient(#30383c 0% 100%)';
+
+    let cursor = 0;
+    const stops = energies.map((energy, index) => {
+      const start = cursor;
+      cursor += (energy / total) * 100;
+      return `${colors[index] ?? '#30383c'} ${start}% ${cursor}%`;
+    });
+    return `conic-gradient(${stops.join(', ')})`;
+  }
+
+  daypartChartLabel(): string {
+    const impact = this.energyImpact();
+    if (!impact) return 'Today energy by time of day';
+    const summary = impact.dayparts
+      .map((part) => `${part.label}: ${this.energyLabel(part.energyKwh)}`)
+      .join(', ');
+    return `Today energy by time of day. ${summary}`;
   }
 
   coverageLabel(period: EnergyPeriodImpact): string {
