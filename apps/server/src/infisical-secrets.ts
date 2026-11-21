@@ -77,7 +77,7 @@ export async function loadInfisicalAuthSecrets(
           method: 'GET',
           headers: { Authorization: `Bearer ${loginPayload['accessToken']}` },
         },
-        `secret fetch for ${secretPath}`,
+        `secret fetch for ${secretPath} (environment ${environment})`,
       );
       if (!isRecord(response) || !Array.isArray(response['secrets'])) {
         throw new InfisicalRequestError(
@@ -150,7 +150,10 @@ async function requestJson(url: URL, init: RequestInit, operation: string): Prom
       );
     }
     if (!response.ok) {
-      throw new InfisicalRequestError(`${operation} returned HTTP ${response.status}`);
+      const detail = init.method === 'GET' ? await readApiErrorMessage(response) : null;
+      throw new InfisicalRequestError(
+        `${operation} returned HTTP ${response.status}${detail ? `: ${detail}` : ''}`,
+      );
     }
     try {
       return await response.json();
@@ -162,6 +165,28 @@ async function requestJson(url: URL, init: RequestInit, operation: string): Prom
     }
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+async function readApiErrorMessage(response: Response): Promise<string | null> {
+  try {
+    const payload: unknown = await response.json();
+    if (!isRecord(payload)) return null;
+    const detail =
+      typeof payload['message'] === 'string'
+        ? payload['message']
+        : typeof payload['error'] === 'string'
+          ? payload['error']
+          : null;
+    if (!detail) return null;
+    const message = detail
+      .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!message) return null;
+    return message.slice(0, 200);
+  } catch {
+    return null;
   }
 }
 
