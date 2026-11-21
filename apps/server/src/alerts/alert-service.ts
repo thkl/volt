@@ -2,7 +2,12 @@ import { createTransport } from 'nodemailer';
 import type { HostManager } from '../collector/host-manager.js';
 import type { UpsSnapshot } from '../domain/models.js';
 import { decryptCredentials, encryptCredentials } from '../security/credentials.js';
-import type { Store } from '../storage/store.js';
+import type {
+  AlertHistoryChannelResult,
+  AlertHistoryRecord,
+  AlertHistoryStatus,
+  Store,
+} from '../storage/store.js';
 
 export type AlertChannel = 'pushover' | 'email';
 
@@ -85,6 +90,12 @@ interface AlertEvent {
   detail: string;
 }
 
+interface AlertContext {
+  eventType: string;
+  deviceId?: string;
+  deviceName?: string;
+}
+
 const SETTINGS_KEY = 'alerts';
 const DEFAULT_PREFERENCES: AlertPreferences = {
   rules: {
@@ -122,12 +133,14 @@ export class AlertService {
   private secrets: AlertSecrets;
   private readonly runtimeBelowThreshold = new Map<string, boolean>();
   private readonly startupDeviceIds: Set<string>;
+  private readonly deletedDeviceIds = new Set<string>();
   private readonly onSnapshot = (snapshot: UpsSnapshot, events: AlertEvent[], hostId: string) =>
     this.handleSnapshot(snapshot, events, hostId);
   private readonly onDevicesDeleted = (deviceIds: string[]) => {
     for (const deviceId of deviceIds) {
       this.startupDeviceIds.delete(deviceId);
       this.runtimeBelowThreshold.delete(deviceId);
+      this.deletedDeviceIds.add(deviceId);
     }
   };
 
@@ -170,6 +183,10 @@ export class AlertService {
         credentialsConfigured: Boolean(this.secrets.emailUsername && this.secrets.emailPassword),
       },
     };
+  }
+
+  getHistory(limit = 100): AlertHistoryRecord[] {
+    return this.store.listAlertHistory(limit);
   }
 
   saveSettings(input: unknown): AlertSettingsView {
@@ -226,7 +243,13 @@ export class AlertService {
       if (!this.preferences.pushover.enabled || !this.pushoverConfigured()) {
         throw new AlertConfigurationError('Enable and configure Pushover before sending a test');
       }
-      await this.sendPushover('Volt test alert', 'Pushover alerts are configured and working.');
+      const status = await this.deliver(
+        'Volt test alert',
+        'Pushover alerts are configured and working.',
+        { eventType: 'test' },
+        ['pushover'],
+      );
+      if (status !== 'delivered') throw new AlertDeliveryError('Pushover test delivery failed');
       return;
     }
 
@@ -234,7 +257,13 @@ export class AlertService {
       if (!this.preferences.email.enabled || !this.emailConfigured()) {
         throw new AlertConfigurationError('Enable and configure email before sending a test');
       }
-      await this.sendEmail('Volt test alert', 'Email alerts are configured and working.');
+      const status = await this.deliver(
+        'Volt test alert',
+        'Email alerts are configured and working.',
+        { eventType: 'test' },
+        ['email'],
+      );
+      if (status !== 'delivered') throw new AlertDeliveryError('Email test delivery failed');
       return;
     }
     throw new AlertConfigurationError('Choose a supported alert channel');
@@ -263,17 +292,62 @@ export class AlertService {
   }
 
   private handleSnapshot(snapshot: UpsSnapshot, events: AlertEvent[], hostId: string): void {
-    if (hostId === 'demo') return;
+    if (
+      hostId === 'demo' ||
+      this.collector.sourceHealthById(hostId)?.sourceType === 'demo' ||
+      this.deletedDeviceIds.has(snapshot.deviceId)
+    ) {
+      return;
+    }
     const firstFreshSnapshot =
       snapshot.freshness === 'fresh' && this.startupDeviceIds.delete(snapshot.deviceId);
     const rules = this.preferences.rules;
-    const notifications = new Map<string, string>();
+    const notifications = new Map<string, { message: string; eventType: string }>();
     for (const event of events) {
-      if (firstFreshSnapshot && event.type === 'connection-restored') continue;
+      if (firstFreshSnapshot && event.type === 'connection-restored') {
+        if (rules.connectionRestored) {
+          this.recordHistory({
+            occurredAt: new Date().toISOString(),
+            deviceId: snapshot.deviceId,
+            deviceName: snapshot.deviceName,
+            eventType: event.type,
+            title: 'UPS connection restored',
+            message: `${snapshot.deviceName}: ${event.detail}`,
+            status: 'suppressed',
+            detail: 'Startup recovery notifications are suppressed.',
+            channels: [],
+          });
+        }
+        continue;
+      }
       const title = eventTitle(event.type, rules);
-      if (title) notifications.set(title, `${snapshot.deviceName}: ${event.detail}`);
+      if (!title) continue;
+      if (notifications.has(title)) {
+        this.recordHistory({
+          occurredAt: new Date().toISOString(),
+          deviceId: snapshot.deviceId,
+          deviceName: snapshot.deviceName,
+          eventType: event.type,
+          title,
+          message: `${snapshot.deviceName}: ${event.detail}`,
+          status: 'suppressed',
+          detail: 'Duplicate alerts from the same UPS update were merged.',
+          channels: [],
+        });
+        continue;
+      }
+      notifications.set(title, {
+        message: `${snapshot.deviceName}: ${event.detail}`,
+        eventType: event.type,
+      });
     }
-    for (const [title, message] of notifications) void this.deliver(title, message);
+    for (const [title, notification] of notifications) {
+      void this.deliver(title, notification.message, {
+        eventType: notification.eventType,
+        deviceId: snapshot.deviceId,
+        deviceName: snapshot.deviceName,
+      });
+    }
 
     if (!rules.lowRuntime || snapshot.freshness !== 'fresh' || snapshot.runtimeSeconds === null) {
       return;
@@ -296,28 +370,90 @@ export class AlertService {
     void this.deliver(
       'UPS runtime is low',
       `${snapshot.deviceName} reports about ${runtime} minutes remaining, below the configured ${thresholdMinutes}-minute threshold.`,
+      { eventType: 'low-runtime', deviceId: snapshot.deviceId, deviceName: snapshot.deviceName },
     );
   }
 
-  private async deliver(title: string, message: string): Promise<void> {
+  private async deliver(
+    title: string,
+    message: string,
+    context: AlertContext,
+    onlyChannels?: AlertChannel[],
+  ): Promise<AlertHistoryStatus> {
     const attempts: Array<{ channel: AlertChannel; send: () => Promise<void> }> = [];
-    if (this.preferences.pushover.enabled && this.pushoverConfigured()) {
+    if (
+      (!onlyChannels || onlyChannels.includes('pushover')) &&
+      this.preferences.pushover.enabled &&
+      this.pushoverConfigured()
+    ) {
       attempts.push({ channel: 'pushover', send: () => this.sendPushover(title, message) });
     }
-    if (this.preferences.email.enabled && this.emailConfigured()) {
+    if (
+      (!onlyChannels || onlyChannels.includes('email')) &&
+      this.preferences.email.enabled &&
+      this.emailConfigured()
+    ) {
       attempts.push({ channel: 'email', send: () => this.sendEmail(title, message) });
     }
-    await Promise.all(
-      attempts.map(async ({ channel, send }) => {
+
+    const results: AlertHistoryChannelResult[] = await Promise.all(
+      attempts.map(async ({ channel, send }): Promise<AlertHistoryChannelResult> => {
         try {
           await send();
-        } catch {
+          return { channel, status: 'delivered', detail: null };
+        } catch (error) {
           console.error(
-            JSON.stringify({ level: 'error', message: 'Alert delivery failed', channel }),
+            JSON.stringify({
+              level: 'error',
+              message: 'Alert delivery failed',
+              channel,
+              eventType: context.eventType,
+            }),
           );
+          return {
+            channel,
+            status: 'failed',
+            detail: error instanceof AlertDeliveryError ? error.message : 'Delivery failed',
+          };
         }
       }),
     );
+
+    const failed = results.filter((result) => result.status === 'failed').length;
+    const status: AlertHistoryStatus =
+      attempts.length === 0
+        ? 'no-channel'
+        : failed === 0
+          ? 'delivered'
+          : failed === attempts.length
+            ? 'failed'
+            : 'partially-failed';
+    this.recordHistory({
+      occurredAt: new Date().toISOString(),
+      deviceId: context.deviceId ?? null,
+      deviceName: context.deviceName ?? null,
+      eventType: context.eventType,
+      title,
+      message,
+      status,
+      detail:
+        status === 'no-channel'
+          ? 'No enabled and configured alert channel was available.'
+          : status === 'partially-failed' || status === 'failed'
+            ? 'One or more enabled channels could not deliver this alert.'
+            : null,
+      channels: results,
+    });
+    return status;
+  }
+
+  private recordHistory(input: Parameters<Store['recordAlertHistory']>[0]): void {
+    if (input.deviceId && this.deletedDeviceIds.has(input.deviceId)) return;
+    try {
+      this.store.recordAlertHistory(input);
+    } catch {
+      console.error(JSON.stringify({ level: 'error', message: 'Alert history write failed' }));
+    }
   }
 
   private async sendPushover(title: string, message: string): Promise<void> {

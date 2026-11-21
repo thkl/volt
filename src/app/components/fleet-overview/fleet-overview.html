@@ -1,24 +1,42 @@
-@if(rows().length>1) {
-<section class="fleet-overview" aria-labelledby="fleet-overview-title">
-  <div class="fleet-tabs" role="group" aria-label="Select a UPS">
-    @for (row of rows(); track row.device.id) {
-      <button
-        type="button"
-        class="fleet-tab"
-        [class.selected]="state.selectedDeviceId() === row.device.id"
-        [attr.aria-pressed]="state.selectedDeviceId() === row.device.id"
-        [attr.aria-label]="row.device.name + ', load ' + loadLabel(row.snapshot)"
-        (click)="selectDevice(row.device.id)"
-      >
-        <strong>{{ row.device.name }}</strong>
-        <span class="fleet-load">
-          <span>Load</span>
-          <strong>{{ loadLabel(row.snapshot) }}</strong>
-        </span>
-      </button>
-    } @empty {
-      <p class="fleet-empty">No UPS devices are reporting.</p>
-    }
-  </div>
-</section>
+@if (rows().length > 1) {
+  <section class="fleet-overview" aria-labelledby="fleet-overview-title">
+    <div class="fleet-tabs" role="group" aria-label="Select a UPS">
+      @for (row of rows(); track row.device.id) {
+        <button
+          type="button"
+          class="fleet-tab"
+          [class.selected]="state.selectedDeviceId() === row.device.id"
+          [attr.aria-pressed]="state.selectedDeviceId() === row.device.id"
+          [attr.aria-label]="
+            row.device.name +
+            ', ' +
+            state.freshnessLabel(row.snapshot) +
+            ', load ' +
+            loadLabel(row.snapshot)
+          "
+          (click)="selectDevice(row.device.id)"
+        >
+          <span class="fleet-device">
+            <strong>{{ row.device.name }}</strong>
+            <small
+              class="fleet-freshness"
+              [class.freshness-good]="state.freshnessTone(row.snapshot) === 'good'"
+              [class.freshness-warning]="state.freshnessTone(row.snapshot) === 'warning'"
+              [class.freshness-muted]="state.freshnessTone(row.snapshot) === 'muted'"
+              [title]="state.freshnessAge(row.snapshot)"
+            >
+              <span class="freshness-dot" aria-hidden="true"></span>
+              {{ state.freshnessLabel(row.snapshot) }}
+            </small>
+          </span>
+          <span class="fleet-load">
+            <span>Load</span>
+            <strong>{{ loadLabel(row.snapshot) }}</strong>
+          </span>
+        </button>
+      } @empty {
+        <p class="fleet-empty">No UPS devices are reporting.</p>
+      }
+    </div>
+  </section>
 }

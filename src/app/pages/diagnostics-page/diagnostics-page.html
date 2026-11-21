@@ -80,6 +80,10 @@
             <dd>{{ stats.database.records.events }}</dd>
           </div>
           <div>
+            <dt>Alert history</dt>
+            <dd>{{ stats.database.records.alertHistory }}</dd>
+          </div>
+          <div>
             <dt>App settings</dt>
             <dd>{{ stats.database.records.appSettings }}</dd>
           </div>
@@ -182,8 +186,13 @@
                       <h4>{{ device.name }}</h4>
                       <p>{{ device.model }} · {{ snapshot.observedAt }}</p>
                     </div>
-                    <span class="flow-state" [class.flow-warning]="snapshot.flow !== 'online'">
-                      {{ snapshot.status || 'Status unavailable' }}
+                    <span
+                      class="flow-state"
+                      [class.flow-warning]="state.freshnessTone(snapshot) === 'warning'"
+                      [class.flow-muted]="state.freshnessTone(snapshot) === 'muted'"
+                      [title]="state.freshnessAge(snapshot)"
+                    >
+                      {{ state.freshnessLabel(snapshot) }}
                     </span>
                   </div>
                   <dl class="ups-readings">

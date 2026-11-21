@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 import { EventsPage } from './pages/events-page/events-page';
 import { BatteryHealthPage } from './pages/battery-health-page/battery-health-page';
+import { AlertHistoryPage } from './pages/alert-history-page/alert-history-page';
 import { DiagnosticsPage } from './pages/diagnostics-page/diagnostics-page';
 import { HistoryPage } from './pages/history-page/history-page';
 import { OverviewPage } from './pages/overview-page/overview-page';
@@ -12,6 +13,7 @@ export const routes: Routes = [
   { path: 'battery', component: BatteryHealthPage, title: 'Volt · Battery health' },
   { path: 'history', component: HistoryPage, title: 'Volt · History' },
   { path: 'outages', component: OutagesPage, title: 'Volt · Outages' },
+  { path: 'alert-history', component: AlertHistoryPage, title: 'Volt · Alert history' },
   { path: 'incidents', component: EventsPage, title: 'Volt · Incident history' },
   { path: 'events', redirectTo: 'incidents', pathMatch: 'full' },
   { path: 'diagnostics', component: DiagnosticsPage, title: 'Volt · Diagnostics' },

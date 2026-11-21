@@ -61,6 +61,28 @@ export interface IncidentPage {
   nextCursor: string | null;
 }
 
+export type AlertHistoryStatus =
+  'delivered' | 'partially-failed' | 'failed' | 'suppressed' | 'no-channel';
+
+export interface AlertHistoryChannelResult {
+  channel: 'pushover' | 'email';
+  status: 'delivered' | 'failed';
+  detail: string | null;
+}
+
+export interface AlertHistoryEntry {
+  id: number;
+  occurredAt: string;
+  deviceId: string | null;
+  deviceName: string | null;
+  eventType: string;
+  title: string;
+  message: string;
+  status: AlertHistoryStatus;
+  detail: string | null;
+  channels: AlertHistoryChannelResult[];
+}
+
 export interface BackendHistoryPoint {
   observedAt: string;
   value: number;
@@ -203,6 +225,7 @@ export interface VoltInternals {
       devices: number;
       samples: number;
       events: number;
+      alertHistory: number;
       appSettings: number;
       schemaMigrations: number;
     };
@@ -365,6 +388,18 @@ export class LiveUpdates {
       data: payload['data'].map(parseIncidentEvent),
       nextCursor,
     };
+  }
+
+  async getAlertHistory(limit = 100): Promise<AlertHistoryEntry[]> {
+    const response = await fetch(`/api/alerts/history?limit=${limit}`);
+    const payload: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(responseError(payload, 'Alert history could not be loaded'));
+    }
+    if (!isRecord(payload) || !Array.isArray(payload['data'])) {
+      throw new Error('The server returned invalid alert history');
+    }
+    return payload['data'].map(parseAlertHistoryEntry);
   }
 
   async getShutdownReadinessPlans(): Promise<ShutdownReadinessPlan[]> {
@@ -789,6 +824,7 @@ function parseVoltInternals(value: unknown): VoltInternals | null {
     records['devices'],
     records['samples'],
     records['events'],
+    records['alertHistory'],
     records['appSettings'],
     records['schemaMigrations'],
   ];
@@ -800,6 +836,42 @@ function parseVoltInternals(value: unknown): VoltInternals | null {
     return null;
   }
   return value as unknown as VoltInternals;
+}
+
+function parseAlertHistoryEntry(value: unknown): AlertHistoryEntry {
+  if (
+    !isRecord(value) ||
+    typeof value['id'] !== 'number' ||
+    typeof value['occurredAt'] !== 'string' ||
+    (value['deviceId'] !== null && typeof value['deviceId'] !== 'string') ||
+    (value['deviceName'] !== null && typeof value['deviceName'] !== 'string') ||
+    typeof value['eventType'] !== 'string' ||
+    typeof value['title'] !== 'string' ||
+    typeof value['message'] !== 'string' ||
+    (value['status'] !== 'delivered' &&
+      value['status'] !== 'partially-failed' &&
+      value['status'] !== 'failed' &&
+      value['status'] !== 'suppressed' &&
+      value['status'] !== 'no-channel') ||
+    (value['detail'] !== null && typeof value['detail'] !== 'string') ||
+    !Array.isArray(value['channels'])
+  ) {
+    throw new Error('The server returned an invalid alert history entry');
+  }
+  const channels = value['channels'].map(parseAlertHistoryChannel);
+  return { ...value, channels } as unknown as AlertHistoryEntry;
+}
+
+function parseAlertHistoryChannel(value: unknown): AlertHistoryChannelResult {
+  if (
+    !isRecord(value) ||
+    (value['channel'] !== 'pushover' && value['channel'] !== 'email') ||
+    (value['status'] !== 'delivered' && value['status'] !== 'failed') ||
+    (value['detail'] !== null && typeof value['detail'] !== 'string')
+  ) {
+    throw new Error('The server returned an invalid alert delivery result');
+  }
+  return value as unknown as AlertHistoryChannelResult;
 }
 
 function responseError(payload: unknown, fallback: string): string {
@@ -1038,6 +1110,8 @@ function normalizeSnapshot(snapshot: BackendSnapshot): UpsSnapshot {
     temperature: snapshot.temperature,
     alarm: snapshot.alarm,
     observedAt: formatObservedAt(snapshot.observedAt, snapshot.freshness),
+    freshness: snapshot.freshness,
+    lastObservedAt: snapshot.observedAt,
     rawVariables: snapshot.rawVariables,
   };
 }

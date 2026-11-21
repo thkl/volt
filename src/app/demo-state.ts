@@ -36,6 +36,7 @@ export interface SourceDiagnostic {
 
 @Injectable({ providedIn: 'root' })
 export class DemoState {
+  readonly now = signal(Date.now());
   readonly devices = signal<DemoDevice[]>(DEMO_DEVICES);
   readonly scenarios: Array<{ id: DemoScenario; label: string }> = [
     { id: 'online', label: 'Online · grid' },
@@ -98,6 +99,51 @@ export class DemoState {
     if (sample.flow === 'battery') return 'warning';
     return 'good';
   });
+
+  updateClock(): void {
+    this.now.set(Date.now());
+  }
+
+  freshnessState(snapshot: UpsSnapshot): 'fresh' | 'stale' | 'unavailable' {
+    return snapshot.freshness ?? (snapshot.flow === 'stale' ? 'stale' : 'fresh');
+  }
+
+  freshnessLabel(snapshot: UpsSnapshot): string {
+    const freshness = this.freshnessState(snapshot);
+    if (this.backendMode() !== null && this.backendMode() !== 'demo' && !this.apiConnected()) {
+      return 'Feed disconnected';
+    }
+    if (freshness === 'unavailable') return 'No reading';
+    if (freshness === 'stale') return 'Stale data';
+    return this.isDemo() ? 'Simulated data' : 'Live data';
+  }
+
+  freshnessTone(snapshot: UpsSnapshot): 'good' | 'warning' | 'muted' {
+    if (this.backendMode() !== null && this.backendMode() !== 'demo' && !this.apiConnected()) {
+      return 'warning';
+    }
+    const freshness = this.freshnessState(snapshot);
+    if (freshness === 'fresh') return 'good';
+    return freshness === 'stale' ? 'warning' : 'muted';
+  }
+
+  freshnessAge(snapshot: UpsSnapshot): string {
+    const observedAt = Date.parse(snapshot.lastObservedAt ?? '');
+    if (Number.isFinite(observedAt)) {
+      const ageMs = Math.max(0, this.now() - observedAt);
+      if (ageMs < 10_000) return 'Updated just now';
+      if (ageMs < 60_000) return `Updated ${Math.floor(ageMs / 1000)} sec ago`;
+      const minutes = Math.floor(ageMs / 60_000);
+      if (minutes < 60) return `Last reading ${minutes} min ago`;
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return `Last reading ${hours} hr ago`;
+      return `Last reading ${Math.floor(hours / 24)} days ago`;
+    }
+    if (this.freshnessState(snapshot) === 'unavailable') return 'No successful reading';
+    if (this.isDemo() && this.freshnessState(snapshot) === 'fresh') return 'Simulated reading';
+    if (snapshot.observedAt) return `Last reading ${snapshot.observedAt}`;
+    return 'Waiting for a reading';
+  }
 
   selectScenario(value: string): void {
     if (this.scenarios.some((scenario) => scenario.id === value)) {
@@ -221,6 +267,8 @@ function unavailableSnapshot(device: DemoDevice): UpsSnapshot {
     batteryVoltage: null,
     temperature: null,
     observedAt: 'No reading available',
+    freshness: 'unavailable',
+    lastObservedAt: null,
     rawVariables: {},
   };
 }

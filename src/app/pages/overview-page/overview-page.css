@@ -41,27 +41,61 @@
   font-variant-numeric: tabular-nums;
 }
 
-.demo-note {
+.freshness-badge {
   display: inline-flex;
   min-height: 31px;
   align-items: center;
   gap: 8px;
   margin-bottom: 2px;
   padding: 0 10px;
-  border: 1px solid #29405a;
+  border: 1px solid #294a36;
   border-radius: 7px;
-  background: rgb(47 102 156 / 11%);
-  color: #b6d5f2;
+  background: rgb(47 134 74 / 10%);
+  color: #b4e7c3;
   font-size: 0.7rem;
   white-space: nowrap;
 }
 
-.demo-note span {
+.freshness-badge small {
+  margin-left: 2px;
+  color: #91a69a;
+  font-size: 0.63rem;
+}
+
+.freshness-dot {
   width: 7px;
   height: 7px;
+  flex: none;
   border-radius: 50%;
-  background: #55a9ff;
-  box-shadow: 0 0 8px rgb(85 169 255 / 45%);
+  background: #59cf7c;
+  box-shadow: 0 0 8px rgb(89 207 124 / 40%);
+}
+
+.freshness-warning {
+  border-color: #59452d;
+  background: rgb(202 132 44 / 9%);
+  color: #ffd18c;
+}
+
+.freshness-warning .freshness-dot {
+  background: #e7a94d;
+  box-shadow: 0 0 8px rgb(231 169 77 / 35%);
+}
+
+.freshness-muted {
+  border-color: #343d41;
+  background: rgb(128 143 148 / 8%);
+  color: #a8b2b4;
+}
+
+.freshness-muted .freshness-dot {
+  background: #7b898c;
+  box-shadow: none;
+}
+
+.freshness-good .freshness-dot {
+  width: 7px;
+  height: 7px;
 }
 
 .hero-grid {
@@ -551,7 +585,7 @@
     font-size: 0.82rem;
   }
 
-  .demo-note {
+  .freshness-badge {
     min-height: 27px;
     margin: 0;
     font-size: 0.66rem;

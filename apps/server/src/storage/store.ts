@@ -79,9 +79,34 @@ export interface DatabaseDiagnostics {
     samples: number;
     events: number;
     appSettings: number;
+    alertHistory: number;
     schemaMigrations: number;
   };
 }
+
+export type AlertHistoryStatus =
+  'delivered' | 'partially-failed' | 'failed' | 'suppressed' | 'no-channel';
+
+export interface AlertHistoryChannelResult {
+  channel: 'pushover' | 'email';
+  status: 'delivered' | 'failed';
+  detail: string | null;
+}
+
+export interface AlertHistoryRecord {
+  id: number;
+  occurredAt: string;
+  deviceId: string | null;
+  deviceName: string | null;
+  eventType: string;
+  title: string;
+  message: string;
+  status: AlertHistoryStatus;
+  detail: string | null;
+  channels: AlertHistoryChannelResult[];
+}
+
+export type AlertHistoryInput = Omit<AlertHistoryRecord, 'id'>;
 
 export interface PowerSample {
   observedAtMs: number;
@@ -135,6 +160,19 @@ interface PowerSampleRow {
   observed_at_ms: number;
   real_power: number | null;
   power_estimated: number;
+}
+
+interface AlertHistoryRow {
+  id: number;
+  occurred_at: string;
+  device_id: string | null;
+  device_name: string | null;
+  event_type: string;
+  title: string;
+  message: string;
+  status: AlertHistoryStatus;
+  detail: string | null;
+  channels_json: string;
 }
 
 const RANGE_MS: Record<HistoryRange, number> = {
@@ -237,6 +275,7 @@ export class Store {
       devices: this.countRows('devices'),
       samples: this.countRows('samples'),
       events: this.countRows('events'),
+      alertHistory: this.countRows('alert_history'),
       appSettings: this.countRows('app_settings'),
       schemaMigrations: this.countRows('schema_migrations'),
     };
@@ -328,6 +367,7 @@ export class Store {
       const deleteShutdownPlan = this.database.prepare('DELETE FROM app_settings WHERE key = ?');
       for (const device of devices) {
         deleteShutdownPlan.run(`shutdown-readiness:${device.id}`);
+        this.database.prepare('DELETE FROM alert_history WHERE device_id = ?').run(device.id);
       }
       this.database.prepare('DELETE FROM devices WHERE host_id = ?').run(id);
       const result = this.database.prepare('DELETE FROM hosts WHERE id = ?').run(id);
@@ -381,6 +421,47 @@ export class Store {
       .prepare('SELECT MAX(observed_at_ms) AS latest FROM samples WHERE device_id = ?')
       .get(id) as { latest: number | null } | undefined;
     return row?.latest ?? null;
+  }
+
+  recordAlertHistory(input: AlertHistoryInput): void {
+    const occurredAtMs = Date.parse(input.occurredAt);
+    if (!Number.isFinite(occurredAtMs)) throw new Error('Alert timestamp must be valid');
+    this.database
+      .prepare(
+        `INSERT INTO alert_history (
+          occurred_at, occurred_at_ms, device_id, device_name, event_type,
+          title, message, status, detail, channels_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.occurredAt,
+        occurredAtMs,
+        input.deviceId,
+        input.deviceName,
+        input.eventType,
+        input.title.slice(0, 250),
+        input.message.slice(0, 2048),
+        input.status,
+        input.detail?.slice(0, 500) ?? null,
+        JSON.stringify(input.channels),
+      );
+    this.database
+      .prepare('DELETE FROM alert_history WHERE occurred_at_ms < ?')
+      .run(Date.now() - 90 * 24 * 60 * 60_000);
+    this.database
+      .prepare(
+        `DELETE FROM alert_history WHERE id NOT IN (
+          SELECT id FROM alert_history ORDER BY occurred_at_ms DESC, id DESC LIMIT 2000
+        )`,
+      )
+      .run();
+  }
+
+  listAlertHistory(limit = 100): AlertHistoryRecord[] {
+    const rows = this.database
+      .prepare(`SELECT * FROM alert_history ORDER BY occurred_at_ms DESC, id DESC LIMIT ?`)
+      .all(limit) as unknown as AlertHistoryRow[];
+    return rows.map(mapAlertHistoryRow);
   }
 
   writeObservation(
@@ -735,6 +816,7 @@ export class Store {
   deleteExpired(
     sampleCutoffMs: number,
     eventCutoffMs: number,
+    alertHistoryCutoffMs = Date.now() - 90 * 24 * 60 * 60_000,
   ): { samples: number; events: number } {
     this.database.exec('BEGIN IMMEDIATE');
     try {
@@ -746,6 +828,9 @@ export class Store {
         this.database.prepare('DELETE FROM events WHERE occurred_at_ms < ?').run(eventCutoffMs)
           .changes,
       );
+      this.database
+        .prepare('DELETE FROM alert_history WHERE occurred_at_ms < ?')
+        .run(alertHistoryCutoffMs);
       this.database.exec('COMMIT');
       return { samples, events };
     } catch (error) {
@@ -801,6 +886,7 @@ export class Store {
 
     if (this.schemaVersion() < 2) this.migrateHosts();
     if (this.schemaVersion() < 3) this.migrateAppSettings();
+    if (this.schemaVersion() < 4) this.migrateAlertHistory();
   }
 
   private schemaVersion(): number {
@@ -864,6 +950,33 @@ export class Store {
         'CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;',
       );
       this.recordMigration(3);
+      this.database.exec('COMMIT');
+    } catch (error) {
+      this.database.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  private migrateAlertHistory(): void {
+    this.database.exec('BEGIN IMMEDIATE');
+    try {
+      this.database.exec(`
+        CREATE TABLE alert_history (
+          id INTEGER PRIMARY KEY,
+          occurred_at TEXT NOT NULL,
+          occurred_at_ms INTEGER NOT NULL,
+          device_id TEXT,
+          device_name TEXT,
+          event_type TEXT NOT NULL,
+          title TEXT NOT NULL,
+          message TEXT NOT NULL,
+          status TEXT NOT NULL CHECK (status IN ('delivered', 'partially-failed', 'failed', 'suppressed', 'no-channel')),
+          detail TEXT,
+          channels_json TEXT NOT NULL
+        ) STRICT;
+        CREATE INDEX alert_history_time ON alert_history(occurred_at_ms DESC, id DESC);
+      `);
+      this.recordMigration(4);
       this.database.exec('COMMIT');
     } catch (error) {
       this.database.exec('ROLLBACK');
@@ -991,6 +1104,40 @@ function mapEventRow(row: EventRow): PowerEvent {
     previousState: row.previous_state,
     newState: row.new_state,
   };
+}
+
+function mapAlertHistoryRow(row: AlertHistoryRow): AlertHistoryRecord {
+  let channels: AlertHistoryChannelResult[] = [];
+  try {
+    const parsed: unknown = JSON.parse(row.channels_json);
+    if (Array.isArray(parsed)) {
+      channels = parsed.filter(isAlertHistoryChannelResult);
+    }
+  } catch {
+    // Keep the history row visible if an older or damaged channel payload cannot be parsed.
+  }
+  return {
+    id: row.id,
+    occurredAt: row.occurred_at,
+    deviceId: row.device_id,
+    deviceName: row.device_name,
+    eventType: row.event_type,
+    title: row.title,
+    message: row.message,
+    status: row.status,
+    detail: row.detail,
+    channels,
+  };
+}
+
+function isAlertHistoryChannelResult(value: unknown): value is AlertHistoryChannelResult {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const item = value as Record<string, unknown>;
+  return (
+    (item['channel'] === 'pushover' || item['channel'] === 'email') &&
+    (item['status'] === 'delivered' || item['status'] === 'failed') &&
+    (item['detail'] === null || typeof item['detail'] === 'string')
+  );
 }
 
 function round(value: number): number {

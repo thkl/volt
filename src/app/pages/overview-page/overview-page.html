@@ -58,15 +58,17 @@
           · {{ snapshot().model }}
         </p>
       </div>
-      @if (state.isDemo()) {
-        <span class="demo-note"
-          ><span aria-hidden="true"></span> Demo data · simulated readings</span
-        >
-      } @else if (state.backendMode() === 'homeassistant') {
-        <span class="demo-note"><span aria-hidden="true"></span> Live Home Assistant readings</span>
-      } @else {
-        <span class="demo-note"><span aria-hidden="true"></span> Live UPS readings</span>
-      }
+      <span
+        class="freshness-badge"
+        [class.freshness-good]="state.freshnessTone(snapshot()) === 'good'"
+        [class.freshness-warning]="state.freshnessTone(snapshot()) === 'warning'"
+        [class.freshness-muted]="state.freshnessTone(snapshot()) === 'muted'"
+        role="status"
+      >
+        <span class="freshness-dot" aria-hidden="true"></span>
+        <span>{{ state.freshnessLabel(snapshot()) }}</span>
+        <small>{{ state.freshnessAge(snapshot()) }}</small>
+      </span>
     </header>
 
     <app-fleet-overview />

@@ -102,13 +102,16 @@ export class App implements OnInit, OnDestroy {
       this.liveUpdates.pause();
     }
   });
+  private freshnessClock: number | undefined;
 
   ngOnInit(): void {
     void this.auth.start();
+    this.freshnessClock = window.setInterval(() => this.state.updateClock(), 5_000);
   }
 
   ngOnDestroy(): void {
     this.auth.stop();
+    if (this.freshnessClock !== undefined) window.clearInterval(this.freshnessClock);
   }
 
   async signIn(): Promise<void> {

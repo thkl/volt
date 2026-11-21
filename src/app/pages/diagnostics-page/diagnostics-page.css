@@ -296,6 +296,11 @@
   color: #ffd18c;
 }
 
+.flow-muted {
+  border-color: #3b4549;
+  color: #a8b2b4;
+}
+
 .ups-readings {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   margin-top: 11px;

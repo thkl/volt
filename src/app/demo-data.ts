@@ -47,6 +47,8 @@ export interface UpsSnapshot {
   temperature: number | null;
   alarm?: string | null;
   observedAt: string;
+  freshness?: 'fresh' | 'stale' | 'unavailable';
+  lastObservedAt?: string | null;
   rawVariables: Record<string, string>;
 }
 

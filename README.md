@@ -25,6 +25,8 @@ The API exposes host management, collector types, device snapshots, bounded hist
 
 HTTP API requests use in-memory token buckets keyed by client IP. The general `/api/*` bucket allows a burst of 240 requests and refills at 240 per minute. History, energy-impact, outage and event queries share a stricter 30-per-minute bucket. Alert and InfluxDB test-delivery endpoints allow 5 requests per minute. A limited request returns HTTP `429` with a `Retry-After` header. WebSocket messages are not counted as HTTP API requests. Limits are per server process, so each replica has its own buckets.
 
+The **Alert history** page records test deliveries and rule-triggered notifications, including successful and failed channels, alerts with no configured delivery channel, and startup or duplicate notifications Volt suppressed. It retains up to 2,000 records or 90 days of history. Deleting a host also removes its UPS-specific alert records. The overview and fleet tabs show each UPS's freshness and age of its last reading; Diagnostics shows the same freshness state alongside collector health.
+
 Use **Add demo UPS** in Settings to add any number of simulated units for fleet UI checks. Deleting a demo UPS removes its Volt history and device settings. Deleting a NUT or Home Assistant source removes data for every UPS on that source. Data already sent to InfluxDB remains there.
 
 `GET /api/devices/:id/outages?range=30d` summarizes battery-power episodes over 24 hours, 7, 30 or 90 days. Confirmed duration totals omit active and uncertain episodes.

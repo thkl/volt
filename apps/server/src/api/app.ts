@@ -94,11 +94,11 @@ export function createApp({
   if (config.trustedProxyCidrs.length > 0) {
     app.set('trust proxy', [...config.trustedProxyCidrs]);
   }
-  app.disable("x-powered-by");
+  app.disable('x-powered-by');
   // Prevent the admin UI and OIDC pages from being embedded by untrusted sites.
   app.use((_req, res, next) => {
-    res.setHeader("Content-Security-Policy", "frame-ancestors 'none'");
-    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
+    res.setHeader('X-Frame-Options', 'DENY');
     next();
   });
   app.use(noCache);
@@ -155,6 +155,12 @@ export function createApp({
     if (!alertService)
       throw new ApiError(503, 'alerts_unavailable', 'Alert settings are unavailable');
     response.json({ data: alertService.getSettings() });
+  });
+
+  app.get('/api/alerts/history', (request, response) => {
+    if (!alertService)
+      throw new ApiError(503, 'alerts_unavailable', 'Alert history is unavailable');
+    response.json({ data: alertService.getHistory(parseLimit(request.query['limit'])) });
   });
 
   app.put('/api/alerts/settings', (request, response) => {

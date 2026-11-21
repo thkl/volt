@@ -1,0 +1,128 @@
+<div class="alert-history-page">
+  <header class="page-heading">
+    <div>
+      <p class="eyebrow">NOTIFICATIONS</p>
+      <h1>Alert history</h1>
+      <p class="page-subtitle">Delivery results and notifications Volt suppressed</p>
+    </div>
+    @if (state.apiConnected()) {
+      <span class="connection-note"><span aria-hidden="true"></span> Persisted history</span>
+    } @else {
+      <span class="connection-note connection-offline"
+        ><span aria-hidden="true"></span> Backend disconnected</span
+      >
+    }
+  </header>
+
+  <section class="alert-panel" aria-labelledby="alert-history-title">
+    <header class="alert-panel-header">
+      <div>
+        <h2 id="alert-history-title">Recent notifications</h2>
+        <p>
+          @if (state.apiConnected()) {
+            {{ visibleEntries().length }} shown · last 100 records
+            @if (refreshedAt()) {
+              · {{ refreshedLabel() }}
+            }
+          } @else {
+            Stored delivery records remain on the backend
+          }
+        </p>
+      </div>
+      <div class="alert-controls">
+        <label class="alert-filter">
+          <span>Show</span>
+          <select
+            [value]="filter()"
+            (change)="selectFilter($event)"
+            aria-label="Filter alert history"
+          >
+            <option value="all">All alerts</option>
+            <option value="failures">Delivery failures</option>
+            <option value="suppressed">Suppressed</option>
+          </select>
+        </label>
+        @if (state.apiConnected()) {
+          <button class="small-button" type="button" (click)="refresh()" [disabled]="loading()">
+            {{ loading() ? 'Refreshing…' : 'Refresh' }}
+          </button>
+        }
+      </div>
+    </header>
+
+    @if (loadError()) {
+      <p class="alert-error" role="status">{{ loadError() }}</p>
+    }
+
+    @if (loading() && entries().length === 0) {
+      <div class="empty-alerts" role="status">
+        <span class="empty-symbol" aria-hidden="true">…</span>
+        <h3>Loading alert history</h3>
+        <p>Fetching recent delivery results.</p>
+      </div>
+    } @else if (visibleEntries().length > 0) {
+      <ol class="alert-list" aria-label="Alert delivery history">
+        @for (entry of visibleEntries(); track entry.id) {
+          <li
+            class="alert-row"
+            [class.alert-failed]="entry.status === 'failed' || entry.status === 'partially-failed'"
+          >
+            <div class="alert-time">
+              <time [attr.datetime]="entry.occurredAt">{{ formatTime(entry.occurredAt) }}</time>
+              <span>{{ entry.deviceName ?? 'Manual test' }}</span>
+            </div>
+            <div class="alert-main">
+              <div class="alert-title-row">
+                <h3>{{ entry.title }}</h3>
+                <span class="alert-status" [class]="'alert-status status-' + entry.status">
+                  {{ statusLabel(entry.status) }}
+                </span>
+              </div>
+              <p class="alert-message">{{ entry.message }}</p>
+              @if (entry.channels.length > 0) {
+                <div class="channel-results" aria-label="Channel delivery results">
+                  @for (channel of entry.channels; track channel.channel) {
+                    <span
+                      class="channel-result"
+                      [class.channel-failed]="channel.status === 'failed'"
+                    >
+                      <span aria-hidden="true">{{
+                        channel.status === 'delivered' ? '✓' : '!'
+                      }}</span>
+                      {{ channelLabel(channel.channel) }} · {{ channel.status }}
+                      @if (channel.detail) {
+                        <small>{{ channel.detail }}</small>
+                      }
+                    </span>
+                  }
+                </div>
+              }
+              @if (entry.detail) {
+                <p class="alert-detail">{{ entry.detail }}</p>
+              }
+            </div>
+          </li>
+        }
+      </ol>
+    } @else if (loadError()) {
+      <div class="empty-alerts">
+        <span class="empty-symbol" aria-hidden="true">!</span>
+        <h3>Alert history is unavailable</h3>
+        <p>Reconnect to Volt, then refresh the page.</p>
+      </div>
+    } @else {
+      <div class="empty-alerts">
+        <span class="empty-symbol" aria-hidden="true">—</span>
+        <h3>{{ filter() === 'all' ? 'No alerts recorded yet' : 'No matching alerts' }}</h3>
+        <p>
+          @if (filter() === 'all') {
+            Triggered alerts, test deliveries, and startup notifications suppressed by Volt will
+            appear here.
+          } @else {
+            Change the filter to see other alert records.
+          }
+        </p>
+      </div>
+    }
+  </section>
+</div>

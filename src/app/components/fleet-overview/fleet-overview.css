@@ -89,13 +89,56 @@
   box-shadow: inset 0 0 0 1px rgb(76 182 105 / 10%);
 }
 
-.fleet-tab > strong {
+.fleet-device {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.fleet-device > strong {
   overflow: hidden;
   color: #e8edeb;
   font-size: 0.76rem;
   font-weight: 590;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.fleet-freshness {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  color: #a8b4ad;
+  font-size: 0.58rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fleet-freshness .freshness-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: #7b898c;
+}
+
+.fleet-freshness.freshness-good {
+  color: #a9deb8;
+}
+
+.fleet-freshness.freshness-good .freshness-dot {
+  background: #59cf7c;
+  box-shadow: 0 0 6px rgb(89 207 124 / 40%);
+}
+
+.fleet-freshness.freshness-warning {
+  color: #ffd18c;
+}
+
+.fleet-freshness.freshness-warning .freshness-dot {
+  background: #e7a94d;
 }
 
 .fleet-load {
