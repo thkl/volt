@@ -940,11 +940,11 @@ function mapHostRecord(row: HostRow): HostRecord {
   };
 }
 
-function parseEndpointConfig(value: string): Record<string, string | number | boolean | null> {
+function parseEndpointConfig(value: string): Record<string, unknown> {
   try {
     const parsed: unknown = JSON.parse(value);
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
-    return parsed as Record<string, string | number | boolean | null>;
+    return parsed as Record<string, unknown>;
   } catch {
     return {};
   }

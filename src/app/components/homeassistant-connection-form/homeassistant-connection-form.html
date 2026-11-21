@@ -1,0 +1,139 @@
+<form class="ha-connection-form" (ngSubmit)="submitted.emit()">
+  <h4>{{ editing() ? 'Edit Home Assistant connection' : 'Add Home Assistant connection' }}</h4>
+  <div class="host-form-grid">
+    <label class="form-field field-wide">
+      <span>Display name</span>
+      <input
+        [(ngModel)]="form().name"
+        name="haName"
+        required
+        maxlength="100"
+        autocomplete="off"
+        placeholder="Solar battery"
+      />
+    </label>
+    <label class="form-field field-wide">
+      <span>Home Assistant URL</span>
+      <input
+        [(ngModel)]="form().url"
+        name="haUrl"
+        required
+        maxlength="2048"
+        type="url"
+        autocomplete="url"
+        placeholder="http://homeassistant.local:8123"
+      />
+    </label>
+    <label class="form-field field-wide">
+      <span>Long-lived access token</span>
+      <input
+        [(ngModel)]="form().accessToken"
+        name="haAccessToken"
+        type="password"
+        autocomplete="new-password"
+        [required]="!editing() && !credentialsConfigured()"
+        [placeholder]="
+          credentialsConfigured()
+            ? 'Saved securely · leave blank to keep'
+            : 'Create a token in your HA profile'
+        "
+      />
+    </label>
+  </div>
+
+  <h5>State entities</h5>
+  <div class="host-form-grid">
+    <label class="form-field">
+      <span>Status entity</span>
+      <input
+        [(ngModel)]="form().entities.statusEntityId"
+        name="haStatusEntity"
+        placeholder="sensor.ups_status"
+        autocomplete="off"
+      />
+    </label>
+    <label class="form-field">
+      <span>On-battery binary sensor</span>
+      <input
+        [(ngModel)]="form().entities.onBatteryEntityId"
+        name="haOnBatteryEntity"
+        placeholder="binary_sensor.ups_on_battery"
+        autocomplete="off"
+      />
+    </label>
+    <label class="form-field field-wide">
+      <span>Charging binary sensor</span>
+      <input
+        [(ngModel)]="form().entities.chargingEntityId"
+        name="haChargingEntity"
+        placeholder="binary_sensor.battery_charging"
+        autocomplete="off"
+      />
+    </label>
+    <label class="form-field field-wide">
+      <span>Low-battery binary sensor</span>
+      <input
+        [(ngModel)]="form().entities.lowBatteryEntityId"
+        name="haLowBatteryEntity"
+        placeholder="binary_sensor.ups_low_battery"
+        autocomplete="off"
+      />
+    </label>
+  </div>
+  <p class="form-hint">
+    Status values such as OL/online and OB/on_battery are recognized. A binary on-battery sensor
+    takes precedence when configured.
+  </p>
+
+  <h5>Numeric datapoints</h5>
+  <div class="ha-mapping-grid">
+    @for (field of fields(); track field.key) {
+      <div class="ha-mapping-row">
+        <label class="form-field">
+          <span>{{ field.label }} · {{ field.unit }} entity</span>
+          <input
+            [(ngModel)]="form().entities.metrics[field.key].entityId"
+            [name]="'ha-' + field.key + '-entity'"
+            [placeholder]="'sensor.ups_' + field.key"
+            autocomplete="off"
+          />
+        </label>
+        <label class="form-field ha-scale-field">
+          <span>Scale ×</span>
+          <input
+            [(ngModel)]="form().entities.metrics[field.key].scale"
+            [name]="'ha-' + field.key + '-scale'"
+            type="number"
+            min="0.000001"
+            max="1000000"
+            step="any"
+            required
+          />
+        </label>
+        <small>{{ field.exampleScale }}</small>
+      </div>
+    }
+  </div>
+  <p class="form-hint">
+    Scaling multiplies each entity's numeric state to produce the shown unit. Example: kW × 1000 =
+    W, fraction × 100 = percent, minutes × 60 = seconds. Temperature should be in °C after scaling.
+  </p>
+  <p class="form-hint">Volt encrypts the access token in its server database.</p>
+  @if (form().url.startsWith('http://')) {
+    <p class="form-warning" role="note">
+      HTTP sends the access token without transport encryption. Use HTTPS or a trusted private
+      network.
+    </p>
+  }
+  @if (error()) {
+    <p class="form-error" role="alert">{{ error() }}</p>
+  }
+  <div class="form-actions">
+    @if (editing()) {
+      <button class="small-button" type="button" (click)="cancelled.emit()">Cancel</button>
+    }
+    <button class="primary-button" type="submit" [disabled]="saving()">
+      {{ saving() ? 'Saving…' : editing() ? 'Save changes' : 'Add connection' }}
+    </button>
+  </div>
+</form>

@@ -8,6 +8,12 @@ import express, {
 } from 'express';
 import { isIP } from 'node:net';
 import type { HostManager, NutHostInput } from '../collector/host-manager.js';
+import type {
+  HomeAssistantEntityMappings,
+  HomeAssistantHostInput,
+  HomeAssistantNumericField,
+} from '../collector/homeassistant-config.js';
+import { HOME_ASSISTANT_NUMERIC_FIELDS } from '../collector/homeassistant-config.js';
 import type { AppConfig } from '../config.js';
 import {
   DEMO_SCENARIOS,
@@ -214,18 +220,30 @@ export function createApp({
   });
 
   app.post('/api/hosts', (request, response) => {
-    const host = parseNutHostInput(request.body);
     try {
-      response.status(201).json({ data: collector.addNutHost(host) });
+      if (isRecord(request.body) && request.body['sourceType'] === 'homeassistant') {
+        const host = parseHomeAssistantHostInput(request.body);
+        response.status(201).json({ data: collector.addHomeAssistantHost(host) });
+      } else {
+        const host = parseNutHostInput(request.body);
+        response.status(201).json({ data: collector.addNutHost(host) });
+      }
     } catch (error) {
       throw hostMutationError(error);
     }
   });
 
   app.put('/api/hosts/:id', (request, response) => {
-    const host = parseNutHostInput(request.body);
     try {
-      response.json({ data: collector.updateNutHost(request.params['id'] ?? '', host) });
+      if (isRecord(request.body) && request.body['sourceType'] === 'homeassistant') {
+        const host = parseHomeAssistantHostInput(request.body);
+        response.json({
+          data: collector.updateHomeAssistantHost(request.params['id'] ?? '', host),
+        });
+      } else {
+        const host = parseNutHostInput(request.body);
+        response.json({ data: collector.updateNutHost(request.params['id'] ?? '', host) });
+      }
     } catch (error) {
       throw hostMutationError(error);
     }
@@ -490,6 +508,118 @@ function parseNutHostInput(value: unknown): NutHostInput {
     ...(password ? { password } : {}),
     clearCredentials,
   };
+}
+
+function parseHomeAssistantHostInput(value: unknown): HomeAssistantHostInput {
+  if (!isRecord(value)) {
+    throw new ApiError(400, 'validation_error', 'Home Assistant settings must be an object');
+  }
+  const name = typeof value['name'] === 'string' ? value['name'].trim() : '';
+  const rawUrl = typeof value['url'] === 'string' ? value['url'].trim() : '';
+  const accessToken = typeof value['accessToken'] === 'string' ? value['accessToken'] : '';
+  if (!name || name.length > 100) {
+    throw new ApiError(
+      400,
+      'validation_error',
+      'Name is required and must be 100 characters or fewer',
+    );
+  }
+  if (!rawUrl || rawUrl.length > 2048) {
+    throw new ApiError(400, 'validation_error', 'Enter a valid Home Assistant URL');
+  }
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    throw new ApiError(400, 'validation_error', 'Enter an absolute Home Assistant URL');
+  }
+  if (
+    (url.protocol !== 'http:' && url.protocol !== 'https:') ||
+    !url.hostname ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash
+  ) {
+    throw new ApiError(
+      400,
+      'validation_error',
+      'Home Assistant URL must use HTTP or HTTPS without credentials, query or fragment',
+    );
+  }
+  if (accessToken.length > 4096) {
+    throw new ApiError(400, 'validation_error', 'Home Assistant access token is too long');
+  }
+
+  const rawEntities = value['entities'];
+  if (!isRecord(rawEntities) || !isRecord(rawEntities['metrics'])) {
+    throw new ApiError(400, 'validation_error', 'Map at least one Home Assistant entity');
+  }
+  const metricsInput = rawEntities['metrics'];
+  const metrics = Object.fromEntries(
+    HOME_ASSISTANT_NUMERIC_FIELDS.map((field) => [
+      field,
+      parseHomeAssistantMetric(metricsInput[field], field),
+    ]),
+  ) as HomeAssistantEntityMappings['metrics'];
+  const entities: HomeAssistantEntityMappings = {
+    statusEntityId: parseHomeAssistantEntityId(rawEntities['statusEntityId'], 'UPS status'),
+    onBatteryEntityId: parseHomeAssistantEntityId(rawEntities['onBatteryEntityId'], 'On-battery'),
+    chargingEntityId: parseHomeAssistantEntityId(rawEntities['chargingEntityId'], 'Charging'),
+    lowBatteryEntityId: parseHomeAssistantEntityId(
+      rawEntities['lowBatteryEntityId'],
+      'Low-battery',
+    ),
+    metrics,
+  };
+  if (
+    !entities.statusEntityId &&
+    !entities.onBatteryEntityId &&
+    !entities.chargingEntityId &&
+    !entities.lowBatteryEntityId &&
+    !HOME_ASSISTANT_NUMERIC_FIELDS.some((field) => metrics[field])
+  ) {
+    throw new ApiError(400, 'validation_error', 'Map at least one Home Assistant entity');
+  }
+
+  return {
+    name,
+    url: url.toString().replace(/\/$/, ''),
+    accessToken: accessToken.trim(),
+    entities,
+  };
+}
+
+function parseHomeAssistantEntityId(value: unknown, label: string): string | null {
+  if (value === null || value === undefined || value === '') return null;
+  if (
+    typeof value !== 'string' ||
+    value.length > 255 ||
+    !/^[a-z0-9_]+\.[a-z0-9_]+$/i.test(value.trim())
+  ) {
+    throw new ApiError(400, 'validation_error', `${label} entity ID is invalid`);
+  }
+  return value.trim();
+}
+
+function parseHomeAssistantMetric(
+  value: unknown,
+  field: HomeAssistantNumericField,
+): { entityId: string; scale: number } | null {
+  if (!isRecord(value)) {
+    throw new ApiError(400, 'validation_error', `The ${field} mapping is invalid`);
+  }
+  const entityId = parseHomeAssistantEntityId(value['entityId'], field);
+  if (!entityId) return null;
+  const scale = value['scale'] === undefined ? 1 : value['scale'];
+  if (typeof scale !== 'number' || !Number.isFinite(scale) || scale <= 0 || scale > 1_000_000) {
+    throw new ApiError(
+      400,
+      'validation_error',
+      `The ${field} scaling factor must be greater than 0 and no more than 1,000,000`,
+    );
+  }
+  return { entityId, scale };
 }
 
 function parseShutdownPlanInput(

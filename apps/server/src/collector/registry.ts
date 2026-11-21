@@ -6,12 +6,15 @@ import {
 import type { AppConfig } from '../config.js';
 import type { HostCredentials, NutCredentials } from '../security/credentials.js';
 import { DemoCollector, NutCollector, type Collector } from './collector.js';
+import { HomeAssistantCollector } from './homeassistant-collector.js';
 import type { IngestionService } from './ingestion-service.js';
 
 export interface CollectorContext {
   config: AppConfig;
   ingestion: IngestionService;
   hostId: string;
+  hostName: string;
+  endpointConfig: Record<string, unknown>;
   credentials: HostCredentials | null;
 }
 
@@ -56,6 +59,18 @@ export function createDefaultCollectorRegistry(): CollectorRegistry {
       type: 'nut',
       create: ({ ingestion, config, hostId, credentials }) =>
         new NutCollector(ingestion, config, hostId, asNutCredentials(credentials)),
+    },
+    {
+      type: 'homeassistant',
+      create: ({ ingestion, config, hostId, hostName, endpointConfig, credentials }) =>
+        new HomeAssistantCollector(
+          ingestion,
+          config,
+          hostId,
+          hostName,
+          endpointConfig,
+          credentials,
+        ),
     },
   ]);
 }

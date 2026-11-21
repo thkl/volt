@@ -60,7 +60,7 @@ export class EnergyImpactPanel implements OnInit, OnDestroy {
     const mode = this.state.backendMode();
     const deviceId = this.state.selectedDeviceId();
     this.liveUpdates.energyImpactRevision();
-    if (mode === 'nut' || mode === 'multi' || mode === 'demo') {
+    if (mode === 'nut' || mode === 'homeassistant' || mode === 'multi' || mode === 'demo') {
       void this.refreshEnergyImpact(deviceId);
     } else {
       this.energyRequestId += 1;
@@ -72,7 +72,7 @@ export class EnergyImpactPanel implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.refreshTimer = window.setInterval(() => {
       const mode = this.state.backendMode();
-      if (mode === 'nut' || mode === 'multi' || mode === 'demo') {
+      if (mode === 'nut' || mode === 'homeassistant' || mode === 'multi' || mode === 'demo') {
         void this.refreshEnergyImpact(this.state.selectedDeviceId());
       }
     }, 60_000);

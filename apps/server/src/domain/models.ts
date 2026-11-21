@@ -14,7 +14,7 @@ export const DATA_SOURCE_TYPES: ReadonlyArray<DataSourceTypeDescriptor> = [
   { type: 'demo', label: 'Demo simulator', implemented: true },
   { type: 'nut', label: 'Network UPS Tools', implemented: true },
   { type: 'mqtt', label: 'MQTT', implemented: false },
-  { type: 'homeassistant', label: 'Home Assistant', implemented: false },
+  { type: 'homeassistant', label: 'Home Assistant', implemented: true },
   { type: 'unifi-http', label: 'UniFi UPS HTTP API', implemented: false },
 ];
 
@@ -22,7 +22,7 @@ export interface HostSummary {
   id: string;
   name: string;
   sourceType: DataSourceType;
-  endpointConfig: Record<string, string | number | boolean | null>;
+  endpointConfig: Record<string, unknown>;
   credentialsConfigured: boolean;
   enabled: boolean;
   createdAt: string;

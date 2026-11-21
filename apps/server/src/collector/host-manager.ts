@@ -8,6 +8,7 @@ import type { HostCredentials } from '../security/credentials.js';
 import { Store } from '../storage/store.js';
 import { IngestionService } from './ingestion-service.js';
 import { createDefaultCollectorRegistry, type CollectorRegistry } from './registry.js';
+import type { HomeAssistantHostInput } from './homeassistant-config.js';
 
 export interface NutHostInput {
   name: string;
@@ -78,6 +79,10 @@ export class HostManager extends EventEmitter implements Collector {
   sourceHealth(): HostDiagnostic[] {
     return this.store.listEnabledHostRecords().map((host) => {
       const endpoint = host.endpointConfig;
+      const homeAssistantUrl =
+        host.sourceType === 'homeassistant' && typeof endpoint['url'] === 'string'
+          ? safeUrl(endpoint['url'])
+          : null;
       const active = this.active.get(host.id);
       const health = active?.collector.health();
       const startError = this.startErrors.get(host.id);
@@ -85,9 +90,18 @@ export class HostManager extends EventEmitter implements Collector {
         hostId: host.id,
         name: host.name,
         sourceType: host.sourceType,
-        host: typeof endpoint['host'] === 'string' ? endpoint['host'] : null,
-        port: typeof endpoint['port'] === 'number' ? endpoint['port'] : null,
-        tls: endpoint['tls'] === true,
+        host:
+          typeof endpoint['host'] === 'string'
+            ? endpoint['host']
+            : (homeAssistantUrl?.hostname ?? null),
+        port:
+          typeof endpoint['port'] === 'number'
+            ? endpoint['port']
+            : homeAssistantUrl
+              ? Number(homeAssistantUrl.port) ||
+                (homeAssistantUrl.protocol === 'https:' ? 443 : 8123)
+              : null,
+        tls: endpoint['tls'] === true || homeAssistantUrl?.protocol === 'https:',
         status: startError ? 'degraded' : (health?.status ?? 'degraded'),
         connected: health?.connected ?? false,
         phase: startError ? 'error' : (health?.phase ?? 'starting'),
@@ -175,14 +189,60 @@ export class HostManager extends EventEmitter implements Collector {
       updatedAt: new Date().toISOString(),
     };
 
-    if (!this.store.listEnabledHosts().some((item) => item.sourceType === 'nut')) {
-      for (const demoId of this.store.disableHostsByType('demo')) {
-        this.stopHost(demoId, 'Demo source was replaced by a NUT host');
-      }
-    }
+    this.disableDemoWhenAddingFirstRealSource('NUT');
     this.store.upsertHost(host);
     const saved = this.store.getHostRecord(host.id);
     if (!saved) throw new Error('NUT host was not saved');
+    this.startHost(saved);
+    this.emitHostsChanged();
+    return publicHost(saved);
+  }
+
+  addHomeAssistantHost(input: HomeAssistantHostInput): HostSummary {
+    const accessToken = input.accessToken.trim();
+    if (!accessToken) throw new Error('Home Assistant access token is required');
+    const host: HostRecord = {
+      id: randomUUID(),
+      name: input.name,
+      sourceType: 'homeassistant',
+      endpointConfig: { url: input.url, entities: input.entities },
+      encryptedCredentials: encryptCredentials({ accessToken }, this.credentialKey),
+      credentialsConfigured: true,
+      enabled: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    this.disableDemoWhenAddingFirstRealSource('Home Assistant');
+    this.store.upsertHost(host);
+    const saved = this.store.getHostRecord(host.id);
+    if (!saved) throw new Error('Home Assistant connection was not saved');
+    this.startHost(saved);
+    this.emitHostsChanged();
+    return publicHost(saved);
+  }
+
+  updateHomeAssistantHost(id: string, input: HomeAssistantHostInput): HostSummary {
+    const current = this.store.getHostRecord(id);
+    if (!current || current.sourceType !== 'homeassistant') {
+      throw new Error('Home Assistant connection not found');
+    }
+    const accessToken = input.accessToken.trim();
+    if (!accessToken && !current.encryptedCredentials) {
+      throw new Error('Home Assistant access token is required');
+    }
+    this.stopHost(id, 'Home Assistant connection settings changed');
+    this.startErrors.delete(id);
+    this.store.upsertHost({
+      ...current,
+      name: input.name,
+      endpointConfig: { url: input.url, entities: input.entities },
+      encryptedCredentials: accessToken
+        ? encryptCredentials({ accessToken }, this.credentialKey)
+        : current.encryptedCredentials,
+      enabled: true,
+    });
+    const saved = this.store.getHostRecord(id);
+    if (!saved) throw new Error('Home Assistant connection was not saved');
     this.startHost(saved);
     this.emitHostsChanged();
     return publicHost(saved);
@@ -255,6 +315,8 @@ export class HostManager extends EventEmitter implements Collector {
         config: hostConfig,
         ingestion,
         hostId: host.id,
+        hostName: host.name,
+        endpointConfig: host.endpointConfig,
         credentials,
       });
       this.active.set(host.id, { host, collector, ingestion });
@@ -266,6 +328,13 @@ export class HostManager extends EventEmitter implements Collector {
         host.id,
         error instanceof Error ? error.message : 'Collector could not start',
       );
+    }
+  }
+
+  private disableDemoWhenAddingFirstRealSource(sourceName: string): void {
+    if (this.store.listEnabledHosts().some((item) => item.sourceType !== 'demo')) return;
+    for (const demoId of this.store.disableHostsByType('demo')) {
+      this.stopHost(demoId, `Demo source was replaced by a ${sourceName} connection`);
     }
   }
 
@@ -286,6 +355,14 @@ export class HostManager extends EventEmitter implements Collector {
       collector: this.health(),
       sources: this.sourceHealth(),
     });
+  }
+}
+
+function safeUrl(value: string): URL | null {
+  try {
+    return new URL(value);
+  } catch {
+    return null;
   }
 }
 

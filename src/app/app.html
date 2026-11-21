@@ -205,13 +205,14 @@
       <div class="settings-section-heading">
         <div>
           <p class="eyebrow">DATA SOURCES</p>
-          <h3 id="hosts-title">NUT hosts</h3>
+          <h3 id="hosts-title">Collector connections</h3>
         </div>
       </div>
 
       @if (state.hosts().length === 0) {
         <p class="empty-hosts">
-          No hosts configured yet. Add a NUT server to show live UPS readings.
+          No connections configured yet. Add a NUT server or Home Assistant instance to show live
+          battery readings.
         </p>
       } @else {
         <ul class="host-list">
@@ -219,13 +220,15 @@
             <li class="host-item">
               <div class="host-copy">
                 <strong>{{ host.name }}</strong>
-                <span>{{
-                  host.sourceType === 'nut' ? hostAddress(host.id) : 'Built-in simulator'
-                }}</span>
+                <span>{{ sourceName(host) }} · {{ hostAddress(host.id) }}</span>
                 @if (host.credentialsConfigured) {
-                  <small>Authentication saved</small>
+                  <small>{{
+                    host.sourceType === 'homeassistant'
+                      ? 'Access token saved securely'
+                      : 'Authentication saved'
+                  }}</small>
                 }
-                @if (host.sourceType === 'nut') {
+                @if (host.sourceType === 'nut' || host.sourceType === 'homeassistant') {
                   <small
                     class="host-health"
                     [class.host-health-error]="sourceDiagnostic(host.id)?.status === 'degraded'"
@@ -235,7 +238,7 @@
                   </small>
                 }
               </div>
-              @if (host.sourceType === 'nut') {
+              @if (host.sourceType === 'nut' || host.sourceType === 'homeassistant') {
                 <div class="host-actions">
                   <button class="small-button" type="button" (click)="editHost(host.id)">
                     Edit
@@ -249,102 +252,140 @@
                   </button>
                 </div>
               } @else {
-                <span class="source-tag">Demo</span>
+                <span class="source-tag">Built in</span>
               }
             </li>
           }
         </ul>
       }
 
-      <form class="host-form" (ngSubmit)="saveHost()">
-        <h4>{{ editingHostId() ? 'Edit NUT host' : 'Add NUT host' }}</h4>
-        <div class="host-form-grid">
-          <label class="form-field field-wide">
-            <span>Display name</span>
-            <input
-              [(ngModel)]="hostForm.name"
-              name="name"
-              required
-              maxlength="100"
-              autocomplete="off"
-            />
-          </label>
-          <label class="form-field field-wide">
-            <span>Host name or IP address</span>
-            <input
-              [(ngModel)]="hostForm.host"
-              name="host"
-              required
-              maxlength="253"
-              autocomplete="url"
-              placeholder="ups.example.local"
-            />
-          </label>
-          <label class="form-field">
-            <span>Port</span>
-            <input
-              [(ngModel)]="hostForm.port"
-              name="port"
-              required
-              type="number"
-              min="1"
-              max="65535"
-            />
-          </label>
-          <label class="tls-field">
-            <input [(ngModel)]="hostForm.tls" name="tls" type="checkbox" />
-            <span>Use TLS</span>
-          </label>
-          <label class="form-field">
-            <span>Username</span>
-            <input
-              [(ngModel)]="hostForm.username"
-              name="username"
-              autocomplete="username"
-              placeholder="Optional"
-            />
-          </label>
-          <label class="form-field">
-            <span>Password</span>
-            <input
-              [(ngModel)]="hostForm.password"
-              name="password"
-              type="password"
-              autocomplete="new-password"
-              [placeholder]="editingHostHasCredentials() ? 'Leave blank to keep saved' : 'Optional'"
-            />
-          </label>
-        </div>
-        @if (editingHostHasCredentials()) {
-          <label class="clear-credentials">
-            <input
-              [(ngModel)]="hostForm.clearCredentials"
-              name="clearCredentials"
-              type="checkbox"
-            />
-            <span>Remove saved credentials</span>
-          </label>
-        }
-        <p class="form-hint">Volt encrypts saved credentials in the server database.</p>
-        @if (
-          !hostForm.tls && (hostForm.username || hostForm.password || editingHostHasCredentials())
-        ) {
-          <p class="form-warning" role="note">
-            TLS is off. NUT authentication credentials will be sent unencrypted over the network.
-          </p>
-        }
-        @if (hostError()) {
-          <p class="form-error" role="alert">{{ hostError() }}</p>
-        }
-        <div class="host-form-actions">
-          @if (editingHostId()) {
-            <button class="small-button" type="button" (click)="cancelHostEdit()">Cancel</button>
+      <div class="host-actions" role="group" aria-label="Connection type">
+        <button
+          type="button"
+          class="small-button"
+          [attr.aria-pressed]="hostFormType() === 'nut'"
+          [class.primary-button]="hostFormType() === 'nut'"
+          [disabled]="!!editingHostId()"
+          (click)="selectHostFormType('nut')"
+        >
+          NUT
+        </button>
+        <button
+          type="button"
+          class="small-button"
+          [attr.aria-pressed]="hostFormType() === 'homeassistant'"
+          [class.primary-button]="hostFormType() === 'homeassistant'"
+          [disabled]="!!editingHostId()"
+          (click)="selectHostFormType('homeassistant')"
+        >
+          Home Assistant
+        </button>
+      </div>
+
+      @if (hostFormType() === 'nut') {
+        <form class="host-form" (ngSubmit)="saveHost()">
+          <h4>{{ editingHostId() ? 'Edit NUT host' : 'Add NUT host' }}</h4>
+          <div class="host-form-grid">
+            <label class="form-field field-wide">
+              <span>Display name</span>
+              <input
+                [(ngModel)]="hostForm.name"
+                name="name"
+                required
+                maxlength="100"
+                autocomplete="off"
+              />
+            </label>
+            <label class="form-field field-wide">
+              <span>Host name or IP address</span>
+              <input
+                [(ngModel)]="hostForm.host"
+                name="host"
+                required
+                maxlength="253"
+                autocomplete="url"
+                placeholder="ups.example.local"
+              />
+            </label>
+            <label class="form-field">
+              <span>Port</span>
+              <input
+                [(ngModel)]="hostForm.port"
+                name="port"
+                required
+                type="number"
+                min="1"
+                max="65535"
+              />
+            </label>
+            <label class="tls-field">
+              <input [(ngModel)]="hostForm.tls" name="tls" type="checkbox" />
+              <span>Use TLS</span>
+            </label>
+            <label class="form-field">
+              <span>Username</span>
+              <input
+                [(ngModel)]="hostForm.username"
+                name="username"
+                autocomplete="username"
+                placeholder="Optional"
+              />
+            </label>
+            <label class="form-field">
+              <span>Password</span>
+              <input
+                [(ngModel)]="hostForm.password"
+                name="password"
+                type="password"
+                autocomplete="new-password"
+                [placeholder]="
+                  editingHostHasCredentials() ? 'Leave blank to keep saved' : 'Optional'
+                "
+              />
+            </label>
+          </div>
+          @if (editingHostHasCredentials()) {
+            <label class="clear-credentials">
+              <input
+                [(ngModel)]="hostForm.clearCredentials"
+                name="clearCredentials"
+                type="checkbox"
+              />
+              <span>Remove saved credentials</span>
+            </label>
           }
-          <button class="primary-button" type="submit" [disabled]="hostSaving()">
-            {{ hostSaving() ? 'Saving…' : editingHostId() ? 'Save changes' : 'Add host' }}
-          </button>
-        </div>
-      </form>
+          <p class="form-hint">Volt encrypts saved credentials in the server database.</p>
+          @if (
+            !hostForm.tls && (hostForm.username || hostForm.password || editingHostHasCredentials())
+          ) {
+            <p class="form-warning" role="note">
+              TLS is off. NUT authentication credentials will be sent unencrypted over the network.
+            </p>
+          }
+          @if (hostError()) {
+            <p class="form-error" role="alert">{{ hostError() }}</p>
+          }
+          <div class="host-form-actions">
+            @if (editingHostId()) {
+              <button class="small-button" type="button" (click)="cancelHostEdit()">Cancel</button>
+            }
+            <button class="primary-button" type="submit" [disabled]="hostSaving()">
+              {{ hostSaving() ? 'Saving…' : editingHostId() ? 'Save changes' : 'Add host' }}
+            </button>
+          </div>
+        </form>
+      } @else {
+        <app-homeassistant-connection-form
+          [form]="homeAssistantForm"
+          [fields]="homeAssistantMetrics"
+          [saving]="hostSaving()"
+          [editing]="editingHostId() !== null"
+          [credentialsConfigured]="editingHostHasCredentials()"
+          [error]="hostError()"
+          (submitted)="saveHost()"
+          (cancelled)="cancelHostEdit()"
+        />
+      }
     </section>
 
     <section class="alert-settings" aria-labelledby="alerts-title">

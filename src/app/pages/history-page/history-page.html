@@ -12,8 +12,10 @@
     </div>
     @if (state.isDemo()) {
       <span class="demo-note"><span aria-hidden="true"></span> Demo history · fixture data</span>
+    } @else if (state.backendMode() === 'homeassistant') {
+      <span class="demo-note"><span aria-hidden="true"></span> Stored Home Assistant samples</span>
     } @else {
-      <span class="demo-note"><span aria-hidden="true"></span> Stored NUT samples</span>
+      <span class="demo-note"><span aria-hidden="true"></span> Stored UPS samples</span>
     }
   </header>
 
@@ -21,7 +23,11 @@
     [snapshot]="state.snapshot()"
     [scenario]="state.scenario()"
     [deviceId]="state.selectedDeviceId()"
-    [liveMode]="state.backendMode() === 'nut' || state.backendMode() === 'multi'"
+    [liveMode]="
+      state.backendMode() === 'nut' ||
+      state.backendMode() === 'homeassistant' ||
+      state.backendMode() === 'multi'
+    "
     [expanded]="true"
   />
 

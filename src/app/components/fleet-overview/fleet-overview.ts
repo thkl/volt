@@ -54,7 +54,10 @@ export class FleetOverview implements OnInit, OnDestroy {
     const mode = this.state.backendMode();
     const deviceIds = this.state.devices().map((device) => device.id);
     this.liveUpdates.energyImpactRevision();
-    if ((mode === 'nut' || mode === 'multi' || mode === 'demo') && deviceIds.length > 0) {
+    if (
+      (mode === 'nut' || mode === 'homeassistant' || mode === 'multi' || mode === 'demo') &&
+      deviceIds.length > 0
+    ) {
       void this.refreshEnergy(deviceIds);
     } else {
       this.requestId += 1;
@@ -67,7 +70,7 @@ export class FleetOverview implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.refreshTimer = window.setInterval(() => {
       const mode = this.state.backendMode();
-      if (mode === 'nut' || mode === 'multi' || mode === 'demo') {
+      if (mode === 'nut' || mode === 'homeassistant' || mode === 'multi' || mode === 'demo') {
         void this.refreshEnergy(this.state.devices().map((device) => device.id));
       }
     }, 60_000);

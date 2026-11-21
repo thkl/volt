@@ -12,14 +12,18 @@
     </div>
     @if (state.isDemo()) {
       <span class="demo-note"><span aria-hidden="true"></span> Demo battery report</span>
+    } @else if (state.backendMode() === 'homeassistant') {
+      <span class="demo-note"><span aria-hidden="true"></span> Mapped Home Assistant entities</span>
     } @else {
-      <span class="demo-note"><span aria-hidden="true"></span> UPS-reported data</span>
+      <span class="demo-note"><span aria-hidden="true"></span> Reported battery data</span>
     }
   </header>
 
   @if (
     state.backendMode() === 'none' ||
-    ((state.backendMode() === 'nut' || state.backendMode() === 'multi') &&
+    ((state.backendMode() === 'nut' ||
+      state.backendMode() === 'homeassistant' ||
+      state.backendMode() === 'multi') &&
       state.devices().length === 0)
   ) {
     <section class="health-empty" aria-labelledby="battery-empty-title">
@@ -32,8 +36,8 @@
         }}
       </h2>
       <p>
-        Add a NUT host in Settings. Volt will show battery status, self-test results, and service
-        dates when your UPS reports them.
+        Add a NUT or Home Assistant connection in Settings. Volt shows battery details only when the
+        source reports or maps them.
       </p>
     </section>
   } @else {

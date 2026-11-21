@@ -287,6 +287,17 @@ export class LiveUpdates {
     return this.mutateHost(`/api/hosts/${encodeURIComponent(id)}`, 'PUT', host);
   }
 
+  async createHomeAssistantHost(host: HomeAssistantHostForm): Promise<BackendHost> {
+    return this.mutateHost('/api/hosts', 'POST', { ...host, sourceType: 'homeassistant' });
+  }
+
+  async updateHomeAssistantHost(id: string, host: HomeAssistantHostForm): Promise<BackendHost> {
+    return this.mutateHost(`/api/hosts/${encodeURIComponent(id)}`, 'PUT', {
+      ...host,
+      sourceType: 'homeassistant',
+    });
+  }
+
   async removeHost(id: string): Promise<void> {
     await this.hostRequest(`/api/hosts/${encodeURIComponent(id)}`, 'DELETE');
   }
@@ -644,7 +655,7 @@ export class LiveUpdates {
   private async mutateHost(
     path: string,
     method: 'POST' | 'PUT',
-    host: NutHostForm,
+    host: object,
   ): Promise<BackendHost> {
     const response = await this.hostRequest<{ data?: BackendHost }>(path, method, host);
     if (!response.data) throw new Error('The server did not return the saved host');
@@ -654,7 +665,7 @@ export class LiveUpdates {
   private async hostRequest<T = { data?: unknown }>(
     path: string,
     method: 'POST' | 'PUT' | 'DELETE',
-    body?: NutHostForm,
+    body?: object,
   ): Promise<T> {
     const response = await fetch(path, {
       method,
@@ -880,8 +891,45 @@ export interface NutHostForm {
   clearCredentials: boolean;
 }
 
+export const HOME_ASSISTANT_NUMERIC_FIELDS = [
+  'batteryCharge',
+  'runtimeSeconds',
+  'loadPercent',
+  'realPower',
+  'inputVoltage',
+  'outputVoltage',
+  'inputFrequency',
+  'outputFrequency',
+  'batteryVoltage',
+  'temperature',
+] as const;
+
+export type HomeAssistantNumericField = (typeof HOME_ASSISTANT_NUMERIC_FIELDS)[number];
+
+export interface HomeAssistantMetricForm {
+  entityId: string;
+  scale: number;
+}
+
+export interface HomeAssistantHostForm {
+  name: string;
+  url: string;
+  accessToken: string;
+  entities: {
+    statusEntityId: string;
+    onBatteryEntityId: string;
+    chargingEntityId: string;
+    lowBatteryEntityId: string;
+    metrics: Record<HomeAssistantNumericField, HomeAssistantMetricForm>;
+  };
+}
+
 function normalizeMode(value: unknown): Exclude<BackendMode, null> {
-  return value === 'nut' || value === 'multi' || value === 'none' || value === 'demo'
+  return value === 'nut' ||
+    value === 'homeassistant' ||
+    value === 'multi' ||
+    value === 'none' ||
+    value === 'demo'
     ? value
     : 'demo';
 }

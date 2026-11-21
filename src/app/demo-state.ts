@@ -2,13 +2,13 @@ import { Injectable, computed, signal } from '@angular/core';
 import { DEMO_DEVICES, DemoScenario, getDemoEvents, getDemoSnapshot } from './demo-data';
 import type { DemoDevice, UpsSnapshot } from './demo-data';
 
-export type BackendMode = 'demo' | 'nut' | 'multi' | 'none' | null;
+export type BackendMode = 'demo' | 'nut' | 'homeassistant' | 'multi' | 'none' | null;
 
 export interface BackendHost {
   id: string;
   name: string;
   sourceType: string;
-  endpointConfig: Record<string, string | number | boolean | null>;
+  endpointConfig: Record<string, unknown>;
   credentialsConfigured: boolean;
   enabled: boolean;
   createdAt: string;

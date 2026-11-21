@@ -11,6 +11,7 @@ import {
 import { FormsModule } from '@angular/forms';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthState } from './auth-state';
+import { HomeAssistantConnectionForm } from './components/homeassistant-connection-form/homeassistant-connection-form';
 import { DemoState } from './demo-state';
 import {
   AlertSettings,
@@ -18,13 +19,16 @@ import {
   EnergyImpactSettings,
   InfluxDbSettings,
   InfluxDbSettingsForm,
+  HomeAssistantHostForm,
   LiveUpdates,
   NutHostForm,
 } from './live-updates';
-import type { SourceDiagnostic } from './demo-state';
+import { HOME_ASSISTANT_NUMERIC_FIELDS } from './live-updates';
+import type { HomeAssistantMetricDescriptor } from './components/homeassistant-connection-form/homeassistant-connection-form';
+import type { BackendHost, SourceDiagnostic } from './demo-state';
 
 @Component({
-  imports: [FormsModule, RouterLink, RouterLinkActive, RouterOutlet],
+  imports: [FormsModule, HomeAssistantConnectionForm, RouterLink, RouterLinkActive, RouterOutlet],
   selector: 'app-root',
   styleUrl: './app.css',
   templateUrl: './app.html',
@@ -37,6 +41,7 @@ export class App implements OnInit, OnDestroy {
   readonly hostSaving = signal(false);
   readonly hostError = signal('');
   readonly editingHostId = signal<string | null>(null);
+  readonly hostFormType = signal<'nut' | 'homeassistant'>('nut');
   readonly alertSettings = signal<AlertSettings | null>(null);
   readonly alertLoading = signal(false);
   readonly alertSaving = signal(false);
@@ -55,6 +60,19 @@ export class App implements OnInit, OnDestroy {
   readonly energyError = signal('');
   readonly energyNotice = signal('');
   hostForm: NutHostForm = emptyHostForm();
+  homeAssistantForm: HomeAssistantHostForm = emptyHomeAssistantForm();
+  readonly homeAssistantMetrics: HomeAssistantMetricDescriptor[] = [
+    { key: 'batteryCharge', label: 'Battery charge', unit: '%', exampleScale: 'fraction × 100' },
+    { key: 'runtimeSeconds', label: 'Runtime', unit: 'seconds', exampleScale: 'minutes × 60' },
+    { key: 'loadPercent', label: 'Load', unit: '%', exampleScale: 'fraction × 100' },
+    { key: 'realPower', label: 'Output power', unit: 'W', exampleScale: 'kW × 1000' },
+    { key: 'inputVoltage', label: 'Input voltage', unit: 'V', exampleScale: 'V × 1' },
+    { key: 'outputVoltage', label: 'Output voltage', unit: 'V', exampleScale: 'V × 1' },
+    { key: 'inputFrequency', label: 'Input frequency', unit: 'Hz', exampleScale: 'Hz × 1' },
+    { key: 'outputFrequency', label: 'Output frequency', unit: 'Hz', exampleScale: 'Hz × 1' },
+    { key: 'batteryVoltage', label: 'Battery voltage', unit: 'V', exampleScale: 'V × 1' },
+    { key: 'temperature', label: 'Temperature', unit: '°C', exampleScale: '°C × 1' },
+  ];
   alertForm: AlertSettingsForm = emptyAlertForm();
   influxForm: InfluxDbSettingsForm = emptyInfluxForm();
   energyForm: EnergyImpactSettings = emptyEnergySettings();
@@ -275,23 +293,38 @@ export class App implements OnInit, OnDestroy {
 
   editHost(hostId: string): void {
     const host = this.state.hosts().find((item) => item.id === hostId);
-    if (!host || host.sourceType !== 'nut') return;
-    this.editingHostId.set(host.id);
+    if (!host) return;
     this.hostError.set('');
-    this.hostForm = {
-      name: host.name,
-      host: typeof host.endpointConfig['host'] === 'string' ? host.endpointConfig['host'] : '',
-      port: typeof host.endpointConfig['port'] === 'number' ? host.endpointConfig['port'] : 3493,
-      tls: host.endpointConfig['tls'] === true,
-      username: '',
-      password: '',
-      clearCredentials: false,
-    };
+    this.editingHostId.set(host.id);
+    if (host.sourceType === 'nut') {
+      this.hostFormType.set('nut');
+      this.hostForm = {
+        name: host.name,
+        host: typeof host.endpointConfig['host'] === 'string' ? host.endpointConfig['host'] : '',
+        port: typeof host.endpointConfig['port'] === 'number' ? host.endpointConfig['port'] : 3493,
+        tls: host.endpointConfig['tls'] === true,
+        username: '',
+        password: '',
+        clearCredentials: false,
+      };
+    } else if (host.sourceType === 'homeassistant') {
+      this.hostFormType.set('homeassistant');
+      this.homeAssistantForm = homeAssistantFormFromHost(host);
+    } else {
+      this.editingHostId.set(null);
+    }
+  }
+
+  selectHostFormType(type: 'nut' | 'homeassistant'): void {
+    if (this.editingHostId()) return;
+    this.hostFormType.set(type);
+    this.hostError.set('');
   }
 
   cancelHostEdit(): void {
     this.editingHostId.set(null);
     this.hostForm = emptyHostForm();
+    this.homeAssistantForm = emptyHomeAssistantForm();
     this.hostError.set('');
   }
 
@@ -300,7 +333,13 @@ export class App implements OnInit, OnDestroy {
     this.hostError.set('');
     try {
       const editingId = this.editingHostId();
-      if (editingId) {
+      if (this.hostFormType() === 'homeassistant') {
+        if (editingId) {
+          await this.liveUpdates.updateHomeAssistantHost(editingId, this.homeAssistantForm);
+        } else {
+          await this.liveUpdates.createHomeAssistantHost(this.homeAssistantForm);
+        }
+      } else if (editingId) {
         await this.liveUpdates.updateNutHost(editingId, this.hostForm);
       } else {
         await this.liveUpdates.createNutHost(this.hostForm);
@@ -328,11 +367,22 @@ export class App implements OnInit, OnDestroy {
   hostAddress(hostId: string): string {
     const host = this.state.hosts().find((item) => item.id === hostId);
     if (!host) return '';
+    if (host.sourceType === 'homeassistant') {
+      const url = host.endpointConfig['url'];
+      return typeof url === 'string' ? url : '';
+    }
+    if (host.sourceType !== 'nut') return 'Built-in simulator';
     const address = host.endpointConfig['host'];
     const port = host.endpointConfig['port'];
     return typeof address === 'string'
       ? `${address}:${typeof port === 'number' ? port : 3493}`
       : '';
+  }
+
+  sourceName(host: BackendHost): string {
+    if (host.sourceType === 'homeassistant') return 'Home Assistant';
+    if (host.sourceType === 'nut') return 'NUT';
+    return 'Demo simulator';
   }
 
   editingHostHasCredentials(): boolean {
@@ -368,6 +418,71 @@ function emptyHostForm(): NutHostForm {
     password: '',
     clearCredentials: false,
   };
+}
+
+function emptyHomeAssistantForm(): HomeAssistantHostForm {
+  const metrics = Object.fromEntries(
+    HOME_ASSISTANT_NUMERIC_FIELDS.map((key) => [key, { entityId: '', scale: 1 }]),
+  ) as HomeAssistantHostForm['entities']['metrics'];
+  return {
+    name: '',
+    url: '',
+    accessToken: '',
+    entities: {
+      statusEntityId: '',
+      onBatteryEntityId: '',
+      chargingEntityId: '',
+      lowBatteryEntityId: '',
+      metrics,
+    },
+  };
+}
+
+function homeAssistantFormFromHost(host: BackendHost): HomeAssistantHostForm {
+  const endpointEntities = isRecord(host.endpointConfig['entities'])
+    ? host.endpointConfig['entities']
+    : {};
+  const rawMetrics = isRecord(endpointEntities['metrics']) ? endpointEntities['metrics'] : {};
+  const metrics = Object.fromEntries(
+    HOME_ASSISTANT_NUMERIC_FIELDS.map((key) => {
+      const mapping = isRecord(rawMetrics[key]) ? rawMetrics[key] : {};
+      return [
+        key,
+        {
+          entityId: typeof mapping['entityId'] === 'string' ? mapping['entityId'] : '',
+          scale: typeof mapping['scale'] === 'number' ? mapping['scale'] : 1,
+        },
+      ];
+    }),
+  ) as HomeAssistantHostForm['entities']['metrics'];
+  return {
+    name: host.name,
+    url: typeof host.endpointConfig['url'] === 'string' ? host.endpointConfig['url'] : '',
+    accessToken: '',
+    entities: {
+      statusEntityId:
+        typeof endpointEntities['statusEntityId'] === 'string'
+          ? endpointEntities['statusEntityId']
+          : '',
+      onBatteryEntityId:
+        typeof endpointEntities['onBatteryEntityId'] === 'string'
+          ? endpointEntities['onBatteryEntityId']
+          : '',
+      chargingEntityId:
+        typeof endpointEntities['chargingEntityId'] === 'string'
+          ? endpointEntities['chargingEntityId']
+          : '',
+      lowBatteryEntityId:
+        typeof endpointEntities['lowBatteryEntityId'] === 'string'
+          ? endpointEntities['lowBatteryEntityId']
+          : '',
+      metrics,
+    },
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function emptyAlertForm(): AlertSettingsForm {

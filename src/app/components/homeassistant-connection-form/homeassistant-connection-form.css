@@ -1,0 +1,161 @@
+:host {
+  display: block;
+  min-width: 0;
+}
+
+.ha-connection-form {
+  margin-top: 18px;
+  padding-top: 17px;
+  border-top: 1px solid #2b3236;
+}
+
+h4 {
+  margin: 0 0 13px;
+  color: #e9edeb;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+h5 {
+  margin: 18px 0 10px;
+  color: #e2e8e5;
+  font-size: 0.74rem;
+  font-weight: 610;
+}
+
+.host-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px;
+}
+
+.field-wide {
+  grid-column: 1 / -1;
+}
+
+.form-field {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.form-field > span {
+  color: #aeb8b7;
+  font-size: 0.7rem;
+  font-weight: 550;
+}
+
+.form-field input {
+  width: 100%;
+  min-height: 37px;
+  padding: 0 10px;
+  border: 1px solid #3a4448;
+  border-radius: 7px;
+  outline: none;
+  background: #111416;
+  color: #edf1ef;
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.form-field input:focus {
+  border-color: #45b976;
+  box-shadow: 0 0 0 2px rgb(69 185 118 / 16%);
+}
+
+.form-field input::placeholder {
+  color: #687477;
+}
+
+.ha-mapping-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.ha-mapping-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px;
+  align-items: end;
+  gap: 7px;
+  padding: 9px;
+  border: 1px solid #2e373b;
+  border-radius: 8px;
+  background: #131719;
+}
+
+.ha-mapping-row > small {
+  grid-column: 1 / -1;
+  margin-top: -2px;
+  color: #718083;
+  font-size: 0.57rem;
+}
+
+.ha-scale-field input {
+  padding: 0 6px;
+  text-align: right;
+}
+
+.form-hint,
+.form-warning,
+.form-error {
+  margin: 11px 0 0;
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.form-hint {
+  color: #82908d;
+}
+
+.form-warning {
+  color: #ffb274;
+}
+
+.form-error {
+  color: #ff938c;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+  margin-top: 14px;
+}
+
+.small-button,
+.primary-button {
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid #3b4549;
+  border-radius: 7px;
+  background: #1b2023;
+  color: #d9dfdd;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 560;
+}
+
+.primary-button {
+  border-color: #27b764;
+  background: #21a956;
+  color: #07140c;
+  font-weight: 680;
+}
+
+.primary-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+@media (max-width: 520px) {
+  .host-form-grid,
+  .ha-mapping-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .field-wide {
+    grid-column: auto;
+  }
+}

@@ -1,7 +1,9 @@
 <div class="overview-page">
   @if (
     state.backendMode() === 'none' ||
-    ((state.backendMode() === 'nut' || state.backendMode() === 'multi') &&
+    ((state.backendMode() === 'nut' ||
+      state.backendMode() === 'homeassistant' ||
+      state.backendMode() === 'multi') &&
       state.devices().length === 0)
   ) {
     <section class="setup-empty" aria-labelledby="setup-empty-title">
@@ -9,13 +11,15 @@
         {{ state.backendMode() === 'none' ? 'GET STARTED' : 'WAITING FOR DATA' }}
       </p>
       <h1 id="setup-empty-title">
-        {{ state.backendMode() === 'none' ? 'Connect a NUT host' : 'No UPS devices found' }}
+        {{ state.backendMode() === 'none' ? 'Connect a data source' : 'No UPS devices found' }}
       </h1>
       <p>
         {{
           state.backendMode() === 'none'
-            ? 'Add your Network UPS Tools server in Settings to start seeing live power and battery readings.'
-            : 'Check that the NUT host is reachable and has UPS devices configured.'
+            ? 'Add a NUT server or Home Assistant connection in Settings to start seeing live battery readings.'
+            : state.backendMode() === 'homeassistant'
+              ? 'Check that Home Assistant is reachable, the access token is valid, and the mapped entities are available.'
+              : 'Check that the NUT host is reachable and has UPS devices configured.'
         }}
       </p>
       @for (source of state.sourceHealth(); track source.hostId) {
@@ -58,8 +62,10 @@
         <span class="demo-note"
           ><span aria-hidden="true"></span> Demo data · simulated readings</span
         >
+      } @else if (state.backendMode() === 'homeassistant') {
+        <span class="demo-note"><span aria-hidden="true"></span> Live Home Assistant readings</span>
       } @else {
-        <span class="demo-note"><span aria-hidden="true"></span> Live NUT readings</span>
+        <span class="demo-note"><span aria-hidden="true"></span> Live UPS readings</span>
       }
     </header>
 
@@ -124,7 +130,11 @@
       [snapshot]="snapshot()"
       [scenario]="state.scenario()"
       [deviceId]="state.selectedDeviceId()"
-      [liveMode]="state.backendMode() === 'nut' || state.backendMode() === 'multi'"
+      [liveMode]="
+        state.backendMode() === 'nut' ||
+        state.backendMode() === 'homeassistant' ||
+        state.backendMode() === 'multi'
+      "
     />
 
     <app-energy-impact-panel />
