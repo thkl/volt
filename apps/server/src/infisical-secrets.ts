@@ -90,23 +90,13 @@ export async function loadInfisicalAuthSecrets(
 
     secrets = {};
     for (const [secretPath, names] of secretNamesByPath) {
-      const secretsUrl = apiUrl(siteUrl, '/api/v4/secrets');
-      secretsUrl.search = new URLSearchParams({
+      const response = await fetchSecretPath({
+        siteUrl,
+        accessToken: loginPayload['accessToken'],
         projectId,
         environment,
-        expandSecretReferences: 'true',
-        recursive: 'false',
         secretPath,
-        viewSecretValue: 'true',
-      }).toString();
-      const response = await requestJson(
-        secretsUrl,
-        {
-          method: 'GET',
-          headers: { Authorization: `Bearer ${loginPayload['accessToken']}` },
-        },
-        `secret fetch for ${secretPath} (environment ${environment})`,
-      );
+      });
       if (!isRecord(response) || !Array.isArray(response['secrets'])) {
         throw new InfisicalRequestError(
           `secret fetch for ${secretPath} returned an invalid response`,
@@ -139,6 +129,62 @@ export async function loadInfisicalAuthSecrets(
   }
 
   return secrets;
+}
+
+async function fetchSecretPath(options: {
+  siteUrl: string;
+  accessToken: string;
+  projectId: string;
+  environment: string;
+  secretPath: string;
+}): Promise<unknown> {
+  try {
+    return await requestSecretsApi(options, 'v4');
+  } catch (error) {
+    if (
+      !(error instanceof InfisicalRequestError) ||
+      ![400, 404, 405].includes(error.statusCode ?? 0)
+    ) {
+      throw error;
+    }
+
+    logInfisical('info', 'Infisical v4 secrets endpoint rejected request; retrying v3 endpoint', {
+      status: error.statusCode,
+      environment: options.environment,
+      secretPath: options.secretPath,
+    });
+    return requestSecretsApi(options, 'v3');
+  }
+}
+
+function requestSecretsApi(
+  options: {
+    siteUrl: string;
+    accessToken: string;
+    projectId: string;
+    environment: string;
+    secretPath: string;
+  },
+  version: 'v3' | 'v4',
+): Promise<unknown> {
+  const endpoint = version === 'v4' ? '/api/v4/secrets' : '/api/v3/secrets/raw';
+  const secretsUrl = apiUrl(options.siteUrl, endpoint);
+  secretsUrl.search = new URLSearchParams({
+    [version === 'v4' ? 'projectId' : 'workspaceId']: options.projectId,
+    environment: options.environment,
+    expandSecretReferences: 'true',
+    recursive: 'false',
+    secretPath: options.secretPath,
+    viewSecretValue: 'true',
+  }).toString();
+  return requestJson(
+    secretsUrl,
+    {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${options.accessToken}` },
+    },
+    `secret fetch for ${options.secretPath} (environment ${options.environment}, API v${version})`,
+  );
 }
 
 interface BootstrapCredential {
@@ -226,6 +272,7 @@ async function requestJson(url: URL, init: RequestInit, operation: string): Prom
       });
       throw new InfisicalRequestError(
         `${operation} returned HTTP ${response.status}${detail ? `: ${detail}` : ''}`,
+        response.status,
       );
     }
     try {
@@ -276,7 +323,14 @@ function getNetworkErrorCode(error: unknown): string | null {
   return typeof cause.code === 'string' && /^[A-Z0-9_]+$/.test(cause.code) ? cause.code : null;
 }
 
-class InfisicalRequestError extends Error {}
+class InfisicalRequestError extends Error {
+  constructor(
+    message: string,
+    readonly statusCode?: number,
+  ) {
+    super(message);
+  }
+}
 
 function normalizeSiteUrl(value: string): string {
   let url: URL;
