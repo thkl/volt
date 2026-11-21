@@ -1,18 +1,5 @@
+@if(rows().length>1) {
 <section class="fleet-overview" aria-labelledby="fleet-overview-title">
-  <header class="fleet-heading">
-    <div>
-      <p class="eyebrow">FLEET</p>
-      <h2 id="fleet-overview-title">UPS fleet</h2>
-      <p>Select a UPS to show its details below.</p>
-    </div>
-    <span class="fleet-count">
-      {{ rows().length }} {{ rows().length === 1 ? 'UPS' : 'UPS devices' }}
-      @if (hostCount() > 0) {
-        · {{ hostCount() }} {{ hostCount() === 1 ? 'host' : 'hosts' }}
-      }
-    </span>
-  </header>
-
   <div class="fleet-tabs" role="group" aria-label="Select a UPS">
     @for (row of rows(); track row.device.id) {
       <button
@@ -34,3 +21,4 @@
     }
   </div>
 </section>
+}
