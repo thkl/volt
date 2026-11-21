@@ -12,7 +12,14 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthState } from './auth-state';
 import { DemoState } from './demo-state';
-import { AlertSettings, AlertSettingsForm, LiveUpdates, NutHostForm } from './live-updates';
+import {
+  AlertSettings,
+  AlertSettingsForm,
+  InfluxDbSettings,
+  InfluxDbSettingsForm,
+  LiveUpdates,
+  NutHostForm,
+} from './live-updates';
 import type { SourceDiagnostic } from './demo-state';
 
 @Component({
@@ -35,8 +42,15 @@ export class App implements OnInit, OnDestroy {
   readonly alertTesting = signal<'pushover' | 'email' | null>(null);
   readonly alertError = signal('');
   readonly alertNotice = signal('');
+  readonly influxSettings = signal<InfluxDbSettings | null>(null);
+  readonly influxLoading = signal(false);
+  readonly influxSaving = signal(false);
+  readonly influxTesting = signal(false);
+  readonly influxError = signal('');
+  readonly influxNotice = signal('');
   hostForm: NutHostForm = emptyHostForm();
   alertForm: AlertSettingsForm = emptyAlertForm();
+  influxForm: InfluxDbSettingsForm = emptyInfluxForm();
   loginEmail = '';
   loginPassword = '';
 
@@ -76,6 +90,7 @@ export class App implements OnInit, OnDestroy {
   openSettings(): void {
     this.settingsDialog()?.nativeElement.showModal();
     if (!this.alertSettings() && !this.alertLoading()) void this.loadAlertSettings();
+    if (!this.influxLoading()) void this.loadInfluxSettings();
   }
 
   closeSettings(): void {
@@ -116,6 +131,87 @@ export class App implements OnInit, OnDestroy {
     } finally {
       this.alertSaving.set(false);
     }
+  }
+
+  async loadInfluxSettings(): Promise<void> {
+    this.influxLoading.set(true);
+    this.influxError.set('');
+    try {
+      const settings = await this.liveUpdates.getInfluxDbSettings();
+      this.influxSettings.set(settings);
+      this.influxForm = formFromInfluxSettings(settings);
+    } catch (error) {
+      this.influxError.set(
+        error instanceof Error ? error.message : 'InfluxDB settings could not be loaded',
+      );
+    } finally {
+      this.influxLoading.set(false);
+    }
+  }
+
+  async saveInfluxSettings(showNotice = true): Promise<boolean> {
+    this.influxSaving.set(true);
+    this.influxError.set('');
+    this.influxNotice.set('');
+    try {
+      const settings = await this.liveUpdates.saveInfluxDbSettings(this.influxForm);
+      this.influxSettings.set(settings);
+      this.influxForm = formFromInfluxSettings(settings);
+      if (showNotice) this.influxNotice.set('InfluxDB settings saved.');
+      return true;
+    } catch (error) {
+      this.influxError.set(
+        error instanceof Error ? error.message : 'InfluxDB settings could not be saved',
+      );
+      return false;
+    } finally {
+      this.influxSaving.set(false);
+    }
+  }
+
+  async testInfluxWrite(): Promise<void> {
+    if (!(await this.saveInfluxSettings(false))) return;
+    this.influxTesting.set(true);
+    this.influxError.set('');
+    this.influxNotice.set('');
+    try {
+      await this.liveUpdates.sendInfluxDbTestWrite();
+      this.influxNotice.set('Test point written to InfluxDB.');
+      await this.loadInfluxSettings();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'The InfluxDB test write failed';
+      await this.loadInfluxSettings();
+      this.influxError.set(message);
+    } finally {
+      this.influxTesting.set(false);
+    }
+  }
+
+  influxStatusLabel(): string {
+    const status = this.influxSettings()?.status;
+    switch (status) {
+      case 'connected':
+        return 'Last write succeeded';
+      case 'waiting':
+        return 'Waiting for first write';
+      case 'not-configured':
+        return 'Configuration incomplete';
+      case 'error':
+        return 'Write error';
+      default:
+        return 'Disabled';
+    }
+  }
+
+  influxLastWriteLabel(value: string | null): string {
+    if (!value) return 'No successful write yet';
+    const timestamp = Date.parse(value);
+    return Number.isFinite(timestamp)
+      ? `Last write ${new Date(timestamp).toLocaleString([], {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+        })}`
+      : 'Last write time unavailable';
   }
 
   async testAlert(channel: 'pushover' | 'email'): Promise<void> {
@@ -259,6 +355,18 @@ function emptyAlertForm(): AlertSettingsForm {
   };
 }
 
+function emptyInfluxForm(): InfluxDbSettingsForm {
+  return {
+    enabled: false,
+    url: '',
+    org: '',
+    bucket: '',
+    measurement: 'volt_ups',
+    token: '',
+    clearToken: false,
+  };
+}
+
 function formFromAlertSettings(settings: AlertSettings): AlertSettingsForm {
   return {
     rules: { ...settings.rules },
@@ -279,5 +387,17 @@ function formFromAlertSettings(settings: AlertSettings): AlertSettingsForm {
       to: settings.email.to,
       clearCredentials: false,
     },
+  };
+}
+
+function formFromInfluxSettings(settings: InfluxDbSettings): InfluxDbSettingsForm {
+  return {
+    enabled: settings.enabled,
+    url: settings.url,
+    org: settings.org,
+    bucket: settings.bucket,
+    measurement: settings.measurement,
+    token: '',
+    clearToken: false,
   };
 }

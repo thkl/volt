@@ -130,6 +130,29 @@ export interface AlertSettingsForm {
   };
 }
 
+export interface InfluxDbSettings {
+  enabled: boolean;
+  url: string;
+  org: string;
+  bucket: string;
+  measurement: string;
+  configured: boolean;
+  tokenConfigured: boolean;
+  status: 'disabled' | 'not-configured' | 'waiting' | 'connected' | 'error';
+  lastWriteAt: string | null;
+  lastError: string | null;
+}
+
+export interface InfluxDbSettingsForm {
+  enabled: boolean;
+  url: string;
+  org: string;
+  bucket: string;
+  measurement: string;
+  token: string;
+  clearToken: boolean;
+}
+
 export interface VoltInternals {
   uptimeMs: number;
   memory: {
@@ -367,6 +390,41 @@ export class LiveUpdates {
     if (response.ok) return;
     const payload: unknown = await response.json().catch(() => null);
     throw new Error(responseError(payload, 'The test alert could not be delivered'));
+  }
+
+  async getInfluxDbSettings(): Promise<InfluxDbSettings> {
+    const response = await fetch('/api/integrations/influxdb/settings');
+    const payload: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(responseError(payload, 'InfluxDB settings could not be loaded'));
+    }
+    if (!isRecord(payload) || !isInfluxDbSettings(payload['data'])) {
+      throw new Error('The server returned invalid InfluxDB settings');
+    }
+    return payload['data'];
+  }
+
+  async saveInfluxDbSettings(settings: InfluxDbSettingsForm): Promise<InfluxDbSettings> {
+    const response = await fetch('/api/integrations/influxdb/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    });
+    const payload: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(responseError(payload, 'InfluxDB settings could not be saved'));
+    }
+    if (!isRecord(payload) || !isInfluxDbSettings(payload['data'])) {
+      throw new Error('The server returned invalid InfluxDB settings');
+    }
+    return payload['data'];
+  }
+
+  async sendInfluxDbTestWrite(): Promise<void> {
+    const response = await fetch('/api/integrations/influxdb/test', { method: 'POST' });
+    if (response.ok) return;
+    const payload: unknown = await response.json().catch(() => null);
+    throw new Error(responseError(payload, 'The InfluxDB test write failed'));
   }
 
   private receive(raw: unknown): void {
@@ -654,6 +712,26 @@ function isAlertSettings(value: unknown): value is AlertSettings {
     typeof email['configured'] === 'boolean' &&
     typeof email['usernameConfigured'] === 'boolean' &&
     typeof email['credentialsConfigured'] === 'boolean'
+  );
+}
+
+function isInfluxDbSettings(value: unknown): value is InfluxDbSettings {
+  return (
+    isRecord(value) &&
+    typeof value['enabled'] === 'boolean' &&
+    typeof value['url'] === 'string' &&
+    typeof value['org'] === 'string' &&
+    typeof value['bucket'] === 'string' &&
+    typeof value['measurement'] === 'string' &&
+    typeof value['configured'] === 'boolean' &&
+    typeof value['tokenConfigured'] === 'boolean' &&
+    (value['status'] === 'disabled' ||
+      value['status'] === 'not-configured' ||
+      value['status'] === 'waiting' ||
+      value['status'] === 'connected' ||
+      value['status'] === 'error') &&
+    (value['lastWriteAt'] === null || typeof value['lastWriteAt'] === 'string') &&
+    (value['lastError'] === null || typeof value['lastError'] === 'string')
   );
 }
 

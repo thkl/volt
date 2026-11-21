@@ -638,5 +638,140 @@
         <button class="small-button" type="button" (click)="loadAlertSettings()">Try again</button>
       }
     </section>
+
+    <section class="alert-settings" aria-labelledby="influx-title">
+      <div class="settings-section-heading">
+        <div>
+          <p class="eyebrow">DATA EXPORT</p>
+          <h3 id="influx-title">InfluxDB</h3>
+        </div>
+      </div>
+
+      @if (influxLoading()) {
+        <p class="form-hint" role="status">Loading InfluxDB settings…</p>
+      } @else if (influxSettings()) {
+        <form (ngSubmit)="saveInfluxSettings()">
+          <div class="host-form">
+            <div class="host-item">
+              <h4>InfluxDB 2.x</h4>
+              <span class="source-tag">{{ influxStatusLabel() }}</span>
+            </div>
+            <label class="tls-field">
+              <input [(ngModel)]="influxForm.enabled" name="influxEnabled" type="checkbox" />
+              <span>Send live UPS data to InfluxDB</span>
+            </label>
+            <div class="host-form-grid">
+              <label class="form-field field-wide">
+                <span>Server URL</span>
+                <input
+                  [(ngModel)]="influxForm.url"
+                  name="influxUrl"
+                  [required]="influxForm.enabled"
+                  maxlength="2048"
+                  type="url"
+                  autocomplete="url"
+                  placeholder="http://influxdb:8086"
+                />
+              </label>
+              <label class="form-field">
+                <span>Organization</span>
+                <input
+                  [(ngModel)]="influxForm.org"
+                  name="influxOrg"
+                  [required]="influxForm.enabled"
+                  maxlength="255"
+                  autocomplete="organization"
+                />
+              </label>
+              <label class="form-field">
+                <span>Bucket</span>
+                <input
+                  [(ngModel)]="influxForm.bucket"
+                  name="influxBucket"
+                  [required]="influxForm.enabled"
+                  maxlength="255"
+                  autocomplete="off"
+                />
+              </label>
+              <label class="form-field">
+                <span>Measurement</span>
+                <input
+                  [(ngModel)]="influxForm.measurement"
+                  name="influxMeasurement"
+                  [required]="influxForm.enabled"
+                  maxlength="128"
+                  autocomplete="off"
+                />
+              </label>
+              <label class="form-field">
+                <span>API token</span>
+                <input
+                  [(ngModel)]="influxForm.token"
+                  name="influxToken"
+                  type="password"
+                  autocomplete="new-password"
+                  maxlength="4096"
+                  [placeholder]="
+                    influxSettings()!.tokenConfigured
+                      ? 'Saved securely · leave blank to keep'
+                      : 'Token with write access to this bucket'
+                  "
+                />
+              </label>
+            </div>
+            @if (influxSettings()!.tokenConfigured) {
+              <label class="clear-credentials">
+                <input
+                  [(ngModel)]="influxForm.clearToken"
+                  name="clearInfluxToken"
+                  type="checkbox"
+                />
+                <span>Remove saved API token</span>
+              </label>
+            }
+            <p class="form-hint">
+              Volt sends fresh readings from live UPS hosts using the InfluxDB 2.x write API. Points
+              include battery, runtime, load, power, voltage, frequency, temperature, and UPS
+              status, tagged by host and device. The token is encrypted in Volt’s database. Test
+              write adds a point tagged <code>source=volt-test</code> to the selected bucket.
+            </p>
+            @if (influxForm.enabled && influxForm.url.startsWith('http://')) {
+              <p class="form-warning">
+                HTTP sends the API token without transport encryption. Use HTTPS outside a trusted
+                private network.
+              </p>
+            }
+            <p class="form-hint" role="status">
+              {{ influxLastWriteLabel(influxSettings()!.lastWriteAt) }}
+            </p>
+            @if (influxSettings()!.lastError) {
+              <p class="form-warning" role="status">{{ influxSettings()!.lastError }}</p>
+            }
+            <div class="host-form-actions">
+              <button
+                class="small-button"
+                type="button"
+                [disabled]="influxSaving() || influxTesting() || !influxForm.enabled"
+                (click)="testInfluxWrite()"
+              >
+                {{ influxTesting() ? 'Writing…' : 'Test write' }}
+              </button>
+              <button class="primary-button" type="submit" [disabled]="influxSaving()">
+                {{ influxSaving() ? 'Saving…' : 'Save InfluxDB settings' }}
+              </button>
+            </div>
+          </div>
+          @if (influxError()) {
+            <p class="form-error" role="alert">{{ influxError() }}</p>
+          }
+          @if (influxNotice()) {
+            <p class="form-hint" role="status">{{ influxNotice() }}</p>
+          }
+        </form>
+      } @else if (influxError()) {
+        <p class="form-error" role="alert">{{ influxError() }}</p>
+        <button class="small-button" type="button" (click)="loadInfluxSettings()">Try again</button>
+      }
+    </section>
   </dialog>
 }

@@ -9,6 +9,7 @@ import { encryptCredentials } from './security/credentials.js';
 import { loadOrCreateCredentialKey } from './security/key-store.js';
 import { AuthManager } from './auth/auth-manager.js';
 import { AlertService } from './alerts/alert-service.js';
+import { InfluxDbService } from './integrations/influxdb-service.js';
 
 export interface VoltServer {
   readonly httpServer: Server;
@@ -46,6 +47,7 @@ export function createVoltServer(config: AppConfig): VoltServer {
   const registry = createDefaultCollectorRegistry();
   const collector = new HostManager(store, config, credentialKey, registry);
   const alertService = new AlertService(store, credentialKey, collector);
+  const influxDbService = new InfluxDbService(store, credentialKey, collector);
   const authManager = new AuthManager(config);
   const app = createApp({
     config,
@@ -54,6 +56,7 @@ export function createVoltServer(config: AppConfig): VoltServer {
     collectorTypes: registry.catalog(),
     authManager,
     alertService,
+    influxDbService,
   });
   const httpServer = createServer(app);
   const websocketHub = new WebSocketHub(httpServer, config, store, collector, authManager);
@@ -74,6 +77,7 @@ export function createVoltServer(config: AppConfig): VoltServer {
     close: async () => {
       clearInterval(retentionTimer);
       alertService.close();
+      influxDbService.close();
       collector.stop();
       websocketHub.close();
       await new Promise<void>((resolve, reject) => {

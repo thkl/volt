@@ -29,6 +29,11 @@ import {
   AlertDeliveryError,
   AlertService,
 } from '../alerts/alert-service.js';
+import {
+  InfluxConfigurationError,
+  InfluxDbService,
+  InfluxDeliveryError,
+} from '../integrations/influxdb-service.js';
 
 export class ApiError extends Error {
   constructor(
@@ -47,6 +52,7 @@ export interface ApiDependencies {
   collectorTypes?: DataSourceTypeDescriptor[];
   authManager?: AuthManager;
   alertService?: AlertService;
+  influxDbService?: InfluxDbService;
 }
 
 const SHUTDOWN_READINESS_KEY_PREFIX = 'shutdown-readiness:';
@@ -58,6 +64,7 @@ export function createApp({
   collectorTypes = [...DATA_SOURCE_TYPES],
   authManager = new AuthManager(config),
   alertService,
+  influxDbService,
 }: ApiDependencies): Express {
   const app = express();
   if (config.trustedProxyCidrs.length > 0) {
@@ -141,6 +148,36 @@ export function createApp({
       response.json({ data: { sent: true } });
     } catch (error) {
       throw alertConfigurationError(error);
+    }
+  });
+
+  app.get('/api/integrations/influxdb/settings', (_request, response) => {
+    if (!influxDbService) {
+      throw new ApiError(503, 'integration_unavailable', 'InfluxDB integration is unavailable');
+    }
+    response.json({ data: influxDbService.getSettings() });
+  });
+
+  app.put('/api/integrations/influxdb/settings', (request, response) => {
+    if (!influxDbService) {
+      throw new ApiError(503, 'integration_unavailable', 'InfluxDB integration is unavailable');
+    }
+    try {
+      response.json({ data: influxDbService.saveSettings(request.body) });
+    } catch (error) {
+      throw influxConfigurationError(error);
+    }
+  });
+
+  app.post('/api/integrations/influxdb/test', async (_request, response) => {
+    if (!influxDbService) {
+      throw new ApiError(503, 'integration_unavailable', 'InfluxDB integration is unavailable');
+    }
+    try {
+      await influxDbService.sendTestWrite();
+      response.json({ data: { sent: true } });
+    } catch (error) {
+      throw influxConfigurationError(error);
     }
   });
 
@@ -510,6 +547,16 @@ function alertConfigurationError(error: unknown): ApiError {
     );
   }
   return new ApiError(500, 'internal_error', 'Alert settings could not be saved');
+}
+
+function influxConfigurationError(error: unknown): ApiError {
+  if (error instanceof InfluxConfigurationError) {
+    return new ApiError(400, 'influx_configuration_error', error.message);
+  }
+  if (error instanceof InfluxDeliveryError) {
+    return new ApiError(502, 'influx_delivery_failed', error.message);
+  }
+  return new ApiError(500, 'internal_error', 'InfluxDB settings could not be saved');
 }
 
 const errorHandler: ErrorRequestHandler = (error: unknown, _request, response: Response, _next) => {
