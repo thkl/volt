@@ -1,4 +1,4 @@
-import { readEnvironmentSecret } from './secret-env.js';
+import { resolveEnvironmentSecret, type EnvironmentSecretName } from './secret-env.js';
 
 const AUTH_SECRET_NAMES = ['AUTH_EMAIL', 'AUTH_PASSWORD'] as const;
 const OIDC_SECRET_NAMES = ['OIDC_CLIENT_ID', 'OIDC_CLIENT_SECRET'] as const;
@@ -7,16 +7,38 @@ const REQUEST_TIMEOUT_MS = 10_000;
 export async function loadInfisicalAuthSecrets(
   env: NodeJS.ProcessEnv,
 ): Promise<Record<string, string> | null> {
-  const clientId = firstSecretValue(env, ['INFISICAL_CLIENT_ID', 'INFISICAL_MACHINE_ID']);
-  const clientSecret = firstSecretValue(env, [
+  const clientIdCredential = firstSecretValue(env, ['INFISICAL_CLIENT_ID', 'INFISICAL_MACHINE_ID']);
+  const clientSecretCredential = firstSecretValue(env, [
     'INFISICAL_CLIENT_SECRET',
     'INFISICAL_MACHINE_TOKEN',
   ]);
+  const clientId = clientIdCredential?.value;
+  const clientSecret = clientSecretCredential?.value;
   const projectId = env['INFISICAL_PROJECT_ID']?.trim() || undefined;
   const enabled = Boolean(clientId || clientSecret || projectId);
   if (!enabled) return null;
 
+  const credentialPreviewEnabled = isEnabled(env['INFISICAL_DEBUG']);
+  logInfisical('info', 'Infisical secret loading configured', {
+    environment: env['INFISICAL_ENVIRONMENT']?.trim() || 'prod',
+    projectIdConfigured: Boolean(projectId),
+    authCredential: describeCredential(clientIdCredential),
+    authSecret: describeCredential(clientSecretCredential),
+    credentialPreviewsEnabled: credentialPreviewEnabled,
+  });
+  if (credentialPreviewEnabled) {
+    logInfisical('debug', 'Infisical bootstrap credential previews', {
+      clientId: previewCredential(clientIdCredential),
+      clientSecret: previewCredential(clientSecretCredential),
+    });
+  }
+
   if (!clientId || !clientSecret || !projectId) {
+    logInfisical('error', 'Infisical configuration is incomplete', {
+      clientIdPresent: Boolean(clientId),
+      clientSecretPresent: Boolean(clientSecret),
+      projectIdPresent: Boolean(projectId),
+    });
     throw new Error('Infisical requires a Universal Auth client ID, client secret, and project ID');
   }
 
@@ -29,6 +51,12 @@ export async function loadInfisicalAuthSecrets(
   const oidcSecretPath = normalizeSecretPath(
     env['INFISICAL_OIDC_SECRET_PATH']?.trim() || defaultSecretPath,
   );
+  logInfisical('info', 'Infisical secret loading started', {
+    site: new URL(siteUrl).origin,
+    environment,
+    authSecretPath,
+    oidcSecretPath,
+  });
 
   let secrets: Record<string, string>;
   try {
@@ -113,20 +141,52 @@ export async function loadInfisicalAuthSecrets(
   return secrets;
 }
 
+interface BootstrapCredential {
+  name: EnvironmentSecretName;
+  source: 'environment' | 'file';
+  value: string;
+}
+
 function firstSecretValue(
   env: NodeJS.ProcessEnv,
-  names: Array<
-    | 'INFISICAL_CLIENT_ID'
-    | 'INFISICAL_CLIENT_SECRET'
-    | 'INFISICAL_MACHINE_ID'
-    | 'INFISICAL_MACHINE_TOKEN'
-  >,
-): string | undefined {
+  names: EnvironmentSecretName[],
+): BootstrapCredential | undefined {
   for (const name of names) {
-    const value = readEnvironmentSecret(env, name);
-    if (value) return value;
+    const resolved = resolveEnvironmentSecret(env, name);
+    if (resolved.value) {
+      return { name, source: resolved.source as 'environment' | 'file', value: resolved.value };
+    }
   }
   return undefined;
+}
+
+function describeCredential(credential: BootstrapCredential | undefined) {
+  return credential
+    ? { variable: credential.name, source: credential.source }
+    : { configured: false };
+}
+
+function previewCredential(credential: BootstrapCredential | undefined) {
+  if (!credential) return { configured: false };
+  return {
+    variable: credential.name,
+    source: credential.source,
+    length: credential.value.length,
+    firstFour: credential.value.length > 4 ? credential.value.slice(0, 4) : '[redacted]',
+  };
+}
+
+function isEnabled(value: string | undefined): boolean {
+  return ['true', '1', 'yes', 'on'].includes(value?.trim().toLowerCase() ?? '');
+}
+
+function logInfisical(
+  level: 'debug' | 'info' | 'error',
+  message: string,
+  fields: Record<string, unknown>,
+): void {
+  const log = level === 'error' ? console.error : console.log;
+  log(JSON.stringify({ level, message, ...fields }));
 }
 
 function apiUrl(siteUrl: string, path: string): URL {
@@ -136,6 +196,13 @@ function apiUrl(siteUrl: string, path: string): URL {
 async function requestJson(url: URL, init: RequestInit, operation: string): Promise<unknown> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const startedAt = Date.now();
+  logInfisical('info', 'Infisical API request started', {
+    operation,
+    host: url.host,
+    path: url.pathname,
+    method: init.method ?? 'GET',
+  });
   try {
     let response: Response;
     try {
@@ -151,12 +218,24 @@ async function requestJson(url: URL, init: RequestInit, operation: string): Prom
     }
     if (!response.ok) {
       const detail = init.method === 'GET' ? await readApiErrorMessage(response) : null;
+      logInfisical('error', 'Infisical API request failed', {
+        operation,
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+        detail,
+      });
       throw new InfisicalRequestError(
         `${operation} returned HTTP ${response.status}${detail ? `: ${detail}` : ''}`,
       );
     }
     try {
-      return await response.json();
+      const payload = await response.json();
+      logInfisical('info', 'Infisical API request completed', {
+        operation,
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+      });
+      return payload;
     } catch {
       if (controller.signal.aborted) {
         throw new InfisicalRequestError(`${operation} timed out after ${REQUEST_TIMEOUT_MS} ms`);

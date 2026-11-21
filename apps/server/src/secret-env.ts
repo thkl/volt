@@ -11,6 +11,14 @@ const FILE_BACKED_SECRET_NAMES = [
   'INFISICAL_MACHINE_TOKEN',
 ] as const;
 
+export type EnvironmentSecretName = (typeof FILE_BACKED_SECRET_NAMES)[number];
+export type EnvironmentSecretSource = 'environment' | 'file' | 'unset';
+
+export interface ResolvedEnvironmentSecret {
+  value: string | undefined;
+  source: EnvironmentSecretSource;
+}
+
 export function resolveFileBackedSecrets(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const resolved = { ...env };
   for (const name of FILE_BACKED_SECRET_NAMES) {
@@ -22,13 +30,25 @@ export function resolveFileBackedSecrets(env: NodeJS.ProcessEnv): NodeJS.Process
 
 export function readEnvironmentSecret(
   env: NodeJS.ProcessEnv,
-  name: (typeof FILE_BACKED_SECRET_NAMES)[number],
+  name: EnvironmentSecretName,
 ): string | undefined {
+  return resolveEnvironmentSecret(env, name).value;
+}
+
+export function resolveEnvironmentSecret(
+  env: NodeJS.ProcessEnv,
+  name: EnvironmentSecretName,
+): ResolvedEnvironmentSecret {
   const directValue = env[name];
-  if (directValue) return directValue;
+  if (directValue) return { value: directValue, source: 'environment' };
 
   const filePath = env[`${name}_FILE`]?.trim();
-  if (!filePath) return directValue;
+  if (!filePath) {
+    return {
+      value: directValue,
+      source: directValue === undefined ? 'unset' : 'environment',
+    };
+  }
 
   let value: string;
   try {
@@ -37,5 +57,5 @@ export function readEnvironmentSecret(
     throw new Error(`${name}_FILE could not be read`);
   }
 
-  return value.replace(/(?:\r\n|\n|\r)+$/, '');
+  return { value: value.replace(/(?:\r\n|\n|\r)+$/, ''), source: 'file' };
 }
