@@ -15,3 +15,6 @@ docs
 *.log
 *.sqlite
 *.sqlite-*
+**/*.spec.ts
+**/*.test.ts
+**/tsconfig.test.json

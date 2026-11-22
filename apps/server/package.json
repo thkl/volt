@@ -9,7 +9,7 @@
     "start": "node --env-file-if-exists=../../.env dist/main.js",
     "test": "vitest run",
     "test:network": "RUN_LOCAL_NETWORK_TESTS=true vitest run",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
     "express": "^5.1.0",

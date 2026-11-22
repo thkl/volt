@@ -10,7 +10,7 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm run build && pnpm server:build
 
-FROM node:24.22.3-bookworm-slim AS production-dependencies
+FROM node:24.22.3-alpine3.24 AS production-dependencies
 
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@12.18.0 --activate
@@ -19,11 +19,11 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/server/package.json ./apps/server/package.json
 RUN pnpm install --prod --filter @volt/server --frozen-lockfile
 
-FROM node:24.22.3-bookworm-slim AS runtime
+FROM node:24.22.3-alpine3.24 AS runtime
 
 WORKDIR /app
-RUN groupadd --system --gid 10001 volt \
-  && useradd --system --uid 10001 --gid volt --home-dir /app --shell /usr/sbin/nologin volt \
+RUN addgroup -S -g 10001 volt \
+  && adduser -S -D -H -u 10001 -G volt -h /app -s /sbin/nologin volt \
   && mkdir -p /data \
   && chown volt:volt /data
 
