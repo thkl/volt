@@ -62,6 +62,11 @@ class OidcClaimsError extends Error {
   }
 }
 
+interface OidcErrorDetails {
+  providerError?: string;
+  providerErrorDescription?: string;
+}
+
 export interface AuthStatus {
   authEnabled: boolean;
   authenticated: boolean;
@@ -402,7 +407,12 @@ export class AuthManager {
     });
     if (!response.ok) {
       const details = parseOidcErrorDetails(await response.text().catch(() => ''));
-      throw new OidcHttpError('token_exchange', response.status, ...details);
+      throw new OidcHttpError(
+        'token_exchange',
+        response.status,
+        details.providerError,
+        details.providerErrorDescription,
+      );
     }
     const tokenResponse = await response.text();
     if (tokenResponse.length > 65_536) throw new Error('OIDC token response is too large');
@@ -600,7 +610,12 @@ async function fetchJson(url: string, operation: 'discovery' | 'jwks'): Promise<
   });
   if (!response.ok) {
     const details = parseOidcErrorDetails(await response.text().catch(() => ''));
-    throw new OidcHttpError(operation, response.status, ...details);
+    throw new OidcHttpError(
+      operation,
+      response.status,
+      details.providerError,
+      details.providerErrorDescription,
+    );
   }
   const text = await response.text();
   if (text.length > 1_000_000) throw new Error('OIDC endpoint response is too large');
@@ -643,22 +658,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function parseOidcErrorDetails(
-  body: string,
-): [providerError?: string, providerErrorDescription?: string] {
+function parseOidcErrorDetails(body: string): OidcErrorDetails {
   try {
     const value: unknown = JSON.parse(body.slice(0, 8192));
-    if (!isRecord(value)) return [];
+    if (!isRecord(value)) return {};
     const providerError = safeLogText(
       typeof value['error'] === 'string' ? value['error'] : undefined,
     );
     const providerErrorDescription = safeLogText(
       typeof value['error_description'] === 'string' ? value['error_description'] : undefined,
     );
-    if (providerError === undefined && providerErrorDescription === undefined) return [];
-    return [providerError, providerErrorDescription];
+    return {
+      ...(providerError === undefined ? {} : { providerError }),
+      ...(providerErrorDescription === undefined ? {} : { providerErrorDescription }),
+    };
   } catch {
-    return [];
+    return {};
   }
 }
 

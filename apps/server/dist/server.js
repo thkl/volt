@@ -8,6 +8,8 @@ import { encryptCredentials } from './security/credentials.js';
 import { loadOrCreateCredentialKey } from './security/key-store.js';
 import { AuthManager } from './auth/auth-manager.js';
 import { AlertService } from './alerts/alert-service.js';
+import { InfluxDbService } from './integrations/influxdb-service.js';
+import { EnergyImpactService } from './energy/energy-impact-service.js';
 export function createVoltServer(config) {
     const store = new Store(config.databasePath);
     let credentialKey;
@@ -34,6 +36,8 @@ export function createVoltServer(config) {
     const registry = createDefaultCollectorRegistry();
     const collector = new HostManager(store, config, credentialKey, registry);
     const alertService = new AlertService(store, credentialKey, collector);
+    const influxDbService = new InfluxDbService(store, credentialKey, collector);
+    const energyImpactService = new EnergyImpactService(store, config.sampleIntervalMs);
     const authManager = new AuthManager(config);
     const app = createApp({
         config,
@@ -42,9 +46,11 @@ export function createVoltServer(config) {
         collectorTypes: registry.catalog(),
         authManager,
         alertService,
+        influxDbService,
+        energyImpactService,
     });
     const httpServer = createServer(app);
-    const websocketHub = new WebSocketHub(httpServer, config, store, collector, authManager);
+    const websocketHub = new WebSocketHub(httpServer, config, store, collector, authManager, energyImpactService);
     return {
         httpServer,
         collector,
@@ -60,6 +66,7 @@ export function createVoltServer(config) {
         close: async () => {
             clearInterval(retentionTimer);
             alertService.close();
+            influxDbService.close();
             collector.stop();
             websocketHub.close();
             await new Promise((resolve, reject) => {
@@ -92,13 +99,11 @@ function seedConfiguredHosts(store, config, credentialKey) {
             encryptedCredentials: credentials,
             enabled: true,
         }, config.clearNutCredentials);
-        for (const demoId of store.disableHostsByType('demo')) {
-            store.disableHost(demoId);
-        }
+        disableBuiltInDemoHosts(store);
         return;
     }
     if (!config.demoMode) {
-        store.disableHostsByType('demo');
+        disableBuiltInDemoHosts(store);
         return;
     }
     if (store.listHosts().length === 0 && config.demoMode) {
@@ -110,5 +115,12 @@ function seedConfiguredHosts(store, config, credentialKey) {
             encryptedCredentials: null,
             enabled: true,
         });
+    }
+}
+function disableBuiltInDemoHosts(store) {
+    for (const host of store.listEnabledHostRecords()) {
+        if (host.sourceType === 'demo' && typeof host.endpointConfig['demoUpsId'] !== 'string') {
+            store.disableHost(host.id);
+        }
     }
 }

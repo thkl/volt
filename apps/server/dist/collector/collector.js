@@ -5,13 +5,16 @@ import { normalizeUps } from '../nut/normalize.js';
 export class DemoCollector {
     ingestion;
     pollIntervalMs;
-    source = new DemoSource();
+    source;
     timer = null;
     isRunning = false;
     lastPollAt = null;
-    constructor(ingestion, pollIntervalMs) {
+    devices;
+    constructor(ingestion, pollIntervalMs, devices = DEMO_DEVICES) {
         this.ingestion = ingestion;
         this.pollIntervalMs = pollIntervalMs;
+        this.devices = devices;
+        this.source = new DemoSource(devices);
     }
     start() {
         if (this.timer)
@@ -33,6 +36,10 @@ export class DemoCollector {
             connected: true,
             lastPollAt: this.lastPollAt,
             lastError: null,
+            phase: 'ready',
+            discoveredUps: this.devices.length,
+            upsNames: this.devices.map((device) => device.name),
+            lastDiscoveryAt: this.lastPollAt,
         };
     }
     selectScenario(value) {
@@ -48,7 +55,7 @@ export class DemoCollector {
         try {
             const now = Date.now();
             for (const snapshot of this.source.snapshots(now)) {
-                const device = DEMO_DEVICES.find((candidate) => candidate.id === snapshot.deviceId);
+                const device = this.devices.find((candidate) => candidate.id === snapshot.deviceId);
                 this.ingestion.ingest(snapshot, device?.name ?? snapshot.deviceName);
             }
             this.lastPollAt = new Date(now).toISOString();

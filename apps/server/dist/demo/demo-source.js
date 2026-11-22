@@ -202,7 +202,12 @@ function fixturesPlaceholder() {
     };
 }
 export class DemoSource extends EventEmitter {
+    devices;
     selectedScenario = 'online';
+    constructor(devices = DEMO_DEVICES) {
+        super();
+        this.devices = devices;
+    }
     get scenario() {
         return this.selectedScenario;
     }
@@ -215,7 +220,7 @@ export class DemoSource extends EventEmitter {
         return true;
     }
     snapshots(now = Date.now()) {
-        return DEMO_DEVICES.map((device) => demoSnapshot(this.selectedScenario, device, now));
+        return this.devices.map((device) => demoSnapshot(this.selectedScenario, device, now));
     }
 }
 export function demoSnapshot(scenario, device, now = Date.now()) {

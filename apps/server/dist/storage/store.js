@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, statSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 const RANGE_MS = {
@@ -76,7 +76,9 @@ CREATE INDEX events_device_time ON events(device_id, occurred_at_ms DESC, id DES
 `;
 export class Store {
     database;
+    databasePath;
     constructor(path) {
+        this.databasePath = path;
         if (path !== ':memory:')
             mkdirSync(dirname(path), { recursive: true });
         this.database = new DatabaseSync(path);
@@ -87,6 +89,29 @@ export class Store {
     }
     close() {
         this.database.close();
+    }
+    getDiagnostics() {
+        const records = {
+            hosts: this.countRows('hosts'),
+            devices: this.countRows('devices'),
+            samples: this.countRows('samples'),
+            events: this.countRows('events'),
+            alertHistory: this.countRows('alert_history'),
+            appSettings: this.countRows('app_settings'),
+            schemaMigrations: this.countRows('schema_migrations'),
+        };
+        const fileBacked = this.databasePath !== ':memory:';
+        const sizeBytes = fileBacked
+            ? [this.databasePath, `${this.databasePath}-wal`, `${this.databasePath}-shm`].reduce((total, path) => total + fileSize(path), 0)
+            : 0;
+        return {
+            fileBacked,
+            sizeBytes,
+            records: {
+                ...records,
+                total: Object.values(records).reduce((total, count) => total + count, 0),
+            },
+        };
     }
     upsertHost(host, clearCredentials = false) {
         const now = new Date().toISOString();
@@ -129,6 +154,27 @@ export class Store {
             .run(new Date().toISOString(), id);
         return Number(result.changes) > 0;
     }
+    deleteHostAndData(id) {
+        this.database.exec('BEGIN IMMEDIATE');
+        try {
+            const devices = this.database
+                .prepare('SELECT id FROM devices WHERE host_id = ?')
+                .all(id);
+            const deleteShutdownPlan = this.database.prepare('DELETE FROM app_settings WHERE key = ?');
+            for (const device of devices) {
+                deleteShutdownPlan.run(`shutdown-readiness:${device.id}`);
+                this.database.prepare('DELETE FROM alert_history WHERE device_id = ?').run(device.id);
+            }
+            this.database.prepare('DELETE FROM devices WHERE host_id = ?').run(id);
+            const result = this.database.prepare('DELETE FROM hosts WHERE id = ?').run(id);
+            this.database.exec('COMMIT');
+            return Number(result.changes) > 0;
+        }
+        catch (error) {
+            this.database.exec('ROLLBACK');
+            throw error;
+        }
+    }
     disableHostsByType(sourceType) {
         const rows = this.database
             .prepare('SELECT id FROM hosts WHERE source_type = ? AND enabled = 1')
@@ -162,6 +208,31 @@ export class Store {
             .prepare('SELECT MAX(observed_at_ms) AS latest FROM samples WHERE device_id = ?')
             .get(id);
         return row?.latest ?? null;
+    }
+    recordAlertHistory(input) {
+        const occurredAtMs = Date.parse(input.occurredAt);
+        if (!Number.isFinite(occurredAtMs))
+            throw new Error('Alert timestamp must be valid');
+        this.database
+            .prepare(`INSERT INTO alert_history (
+          occurred_at, occurred_at_ms, device_id, device_name, event_type,
+          title, message, status, detail, channels_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+            .run(input.occurredAt, occurredAtMs, input.deviceId, input.deviceName, input.eventType, input.title.slice(0, 250), input.message.slice(0, 2048), input.status, input.detail?.slice(0, 500) ?? null, JSON.stringify(input.channels));
+        this.database
+            .prepare('DELETE FROM alert_history WHERE occurred_at_ms < ?')
+            .run(Date.now() - 90 * 24 * 60 * 60_000);
+        this.database
+            .prepare(`DELETE FROM alert_history WHERE id NOT IN (
+          SELECT id FROM alert_history ORDER BY occurred_at_ms DESC, id DESC LIMIT 2000
+        )`)
+            .run();
+    }
+    listAlertHistory(limit = 100) {
+        const rows = this.database
+            .prepare(`SELECT * FROM alert_history ORDER BY occurred_at_ms DESC, id DESC LIMIT ?`)
+            .all(limit);
+        return rows.map(mapAlertHistoryRow);
     }
     writeObservation(snapshot, description, hostId, events, includeSample) {
         const observedAtMs = Date.parse(snapshot.observedAt);
@@ -262,6 +333,23 @@ export class Store {
             bucketMs,
             series,
         };
+    }
+    getPowerSamples(deviceId, fromMs, toMs) {
+        const previous = this.database
+            .prepare(`SELECT observed_at_ms, real_power, power_estimated FROM samples
+         WHERE device_id = ? AND observed_at_ms < ?
+         ORDER BY observed_at_ms DESC, id DESC LIMIT 1`)
+            .get(deviceId, fromMs);
+        const rows = this.database
+            .prepare(`SELECT observed_at_ms, real_power, power_estimated FROM samples
+         WHERE device_id = ? AND observed_at_ms >= ? AND observed_at_ms <= ?
+         ORDER BY observed_at_ms ASC, id ASC`)
+            .all(deviceId, fromMs, toMs);
+        return [...(previous ? [previous] : []), ...rows].map((row) => ({
+            observedAtMs: row.observed_at_ms,
+            realPower: row.real_power,
+            powerEstimated: row.power_estimated === 1,
+        }));
     }
     getEvents(options) {
         const conditions = [];
@@ -436,13 +524,16 @@ export class Store {
                 .map(({ startMs: _start, endMs: _end, ...episode }) => episode),
         };
     }
-    deleteExpired(sampleCutoffMs, eventCutoffMs) {
+    deleteExpired(sampleCutoffMs, eventCutoffMs, alertHistoryCutoffMs = Date.now() - 90 * 24 * 60 * 60_000) {
         this.database.exec('BEGIN IMMEDIATE');
         try {
             const samples = Number(this.database.prepare('DELETE FROM samples WHERE observed_at_ms < ?').run(sampleCutoffMs)
                 .changes);
             const events = Number(this.database.prepare('DELETE FROM events WHERE occurred_at_ms < ?').run(eventCutoffMs)
                 .changes);
+            this.database
+                .prepare('DELETE FROM alert_history WHERE occurred_at_ms < ?')
+                .run(alertHistoryCutoffMs);
             this.database.exec('COMMIT');
             return { samples, events };
         }
@@ -455,6 +546,10 @@ export class Store {
         const row = this.database
             .prepare('SELECT COUNT(*) AS count FROM samples WHERE device_id = ?')
             .get(deviceId);
+        return row.count;
+    }
+    countRows(table) {
+        const row = this.database.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get();
         return row.count;
     }
     getAppSetting(key) {
@@ -485,6 +580,8 @@ export class Store {
             this.migrateHosts();
         if (this.schemaVersion() < 3)
             this.migrateAppSettings();
+        if (this.schemaVersion() < 4)
+            this.migrateAlertHistory();
     }
     schemaVersion() {
         const applied = this.database
@@ -543,6 +640,33 @@ export class Store {
         try {
             this.database.exec('CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;');
             this.recordMigration(3);
+            this.database.exec('COMMIT');
+        }
+        catch (error) {
+            this.database.exec('ROLLBACK');
+            throw error;
+        }
+    }
+    migrateAlertHistory() {
+        this.database.exec('BEGIN IMMEDIATE');
+        try {
+            this.database.exec(`
+        CREATE TABLE alert_history (
+          id INTEGER PRIMARY KEY,
+          occurred_at TEXT NOT NULL,
+          occurred_at_ms INTEGER NOT NULL,
+          device_id TEXT,
+          device_name TEXT,
+          event_type TEXT NOT NULL,
+          title TEXT NOT NULL,
+          message TEXT NOT NULL,
+          status TEXT NOT NULL CHECK (status IN ('delivered', 'partially-failed', 'failed', 'suppressed', 'no-channel')),
+          detail TEXT,
+          channels_json TEXT NOT NULL
+        ) STRICT;
+        CREATE INDEX alert_history_time ON alert_history(occurred_at_ms DESC, id DESC);
+      `);
+            this.recordMigration(4);
             this.database.exec('COMMIT');
         }
         catch (error) {
@@ -636,6 +760,46 @@ function mapEventRow(row) {
         newState: row.new_state,
     };
 }
+function mapAlertHistoryRow(row) {
+    let channels = [];
+    try {
+        const parsed = JSON.parse(row.channels_json);
+        if (Array.isArray(parsed)) {
+            channels = parsed.filter(isAlertHistoryChannelResult);
+        }
+    }
+    catch {
+        // Keep the history row visible if an older or damaged channel payload cannot be parsed.
+    }
+    return {
+        id: row.id,
+        occurredAt: row.occurred_at,
+        deviceId: row.device_id,
+        deviceName: row.device_name,
+        eventType: row.event_type,
+        title: row.title,
+        message: row.message,
+        status: row.status,
+        detail: row.detail,
+        channels,
+    };
+}
+function isAlertHistoryChannelResult(value) {
+    if (typeof value !== 'object' || value === null || Array.isArray(value))
+        return false;
+    const item = value;
+    return ((item['channel'] === 'pushover' || item['channel'] === 'email') &&
+        (item['status'] === 'delivered' || item['status'] === 'failed') &&
+        (item['detail'] === null || typeof item['detail'] === 'string'));
+}
 function round(value) {
     return Math.round(value * 100) / 100;
+}
+function fileSize(path) {
+    try {
+        return statSync(path).size;
+    }
+    catch {
+        return 0;
+    }
 }

@@ -2,12 +2,18 @@ import { EventEmitter } from 'node:events';
 export class IngestionService extends EventEmitter {
     store;
     options;
+    stopped = false;
     constructor(store, options) {
         super();
         this.store = store;
         this.options = options;
     }
+    stop() {
+        this.stopped = true;
+    }
     ingest(snapshot, description = snapshot.deviceName) {
+        if (this.stopped)
+            return;
         const previous = this.store.getDevice(snapshot.deviceId)?.snapshot ?? null;
         const events = previous ? detectTransitions(previous, snapshot, new Date().toISOString()) : [];
         const observedAtMs = Date.parse(snapshot.observedAt);
@@ -20,6 +26,8 @@ export class IngestionService extends EventEmitter {
         this.emit('snapshot', snapshot, events);
     }
     markUnavailable(deviceId, detail, freshness = 'stale') {
+        if (this.stopped)
+            return;
         const device = this.store.getDevice(deviceId);
         const previous = device?.snapshot;
         if (!device || !previous || previous.freshness !== 'fresh')

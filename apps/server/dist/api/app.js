@@ -2,9 +2,13 @@ import { existsSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import express from 'express';
 import { isIP } from 'node:net';
+import { HOME_ASSISTANT_NUMERIC_FIELDS } from '../collector/homeassistant-config.js';
 import { DEMO_SCENARIOS, DATA_SOURCE_TYPES, OUTAGE_RANGES, HISTORY_METRICS, HISTORY_RANGES, } from '../domain/models.js';
 import { AuthManager } from '../auth/auth-manager.js';
 import { AlertConfigurationError, AlertDeliveryError, } from '../alerts/alert-service.js';
+import { InfluxConfigurationError, InfluxDeliveryError, } from '../integrations/influxdb-service.js';
+import { EnergyImpactConfigurationError, } from '../energy/energy-impact-service.js';
+import { ANALYTICS_RATE_LIMIT, API_RATE_LIMIT, INTEGRATION_TEST_RATE_LIMIT, TokenBucketRateLimiter, } from './rate-limiter.js';
 export class ApiError extends Error {
     status;
     code;
@@ -14,11 +18,25 @@ export class ApiError extends Error {
         this.code = code;
     }
 }
-export function createApp({ config, store, collector, collectorTypes = [...DATA_SOURCE_TYPES], authManager = new AuthManager(config), alertService, }) {
+const SHUTDOWN_READINESS_KEY_PREFIX = 'shutdown-readiness:';
+export function createApp({ config, store, collector, collectorTypes = [...DATA_SOURCE_TYPES], authManager = new AuthManager(config), alertService, influxDbService, energyImpactService, }) {
     const app = express();
+    const apiRateLimiter = new TokenBucketRateLimiter('API', API_RATE_LIMIT);
+    const analyticsRateLimiter = new TokenBucketRateLimiter('analytics', ANALYTICS_RATE_LIMIT);
+    const integrationTestRateLimiter = new TokenBucketRateLimiter('integration test', INTEGRATION_TEST_RATE_LIMIT);
+    if (config.trustedProxyCidrs.length > 0) {
+        app.set('trust proxy', [...config.trustedProxyCidrs]);
+    }
     app.disable('x-powered-by');
+    // Prevent the admin UI and OIDC pages from being embedded by untrusted sites.
+    app.use((_req, res, next) => {
+        res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
+        res.setHeader('X-Frame-Options', 'DENY');
+        next();
+    });
     app.use(noCache);
     app.use(cors(config));
+    app.use('/api', apiRateLimiter.middleware);
     app.use(express.json({ limit: '16kb', strict: true }));
     app.use('/api/auth', authManager.router());
     app.use('/api', authManager.middleware, authManager.csrfGuard);
@@ -30,6 +48,22 @@ export function createApp({ config, store, collector, collectorTypes = [...DATA_
             collector: collectorHealth,
             sources: collector.sourceHealth(),
             storage: { status: 'ready' },
+        });
+    });
+    app.get('/api/diagnostics/internals', (_request, response) => {
+        const memory = process.memoryUsage();
+        response.json({
+            data: {
+                uptimeMs: Math.floor(process.uptime() * 1000),
+                memory: {
+                    rssBytes: memory.rss,
+                    heapUsedBytes: memory.heapUsed,
+                    heapTotalBytes: memory.heapTotal,
+                    externalBytes: memory.external,
+                },
+                database: store.getDiagnostics(),
+                collectedAt: new Date().toISOString(),
+            },
         });
     });
     app.get('/api/hosts', (_request, response) => {
@@ -50,6 +84,11 @@ export function createApp({ config, store, collector, collectorTypes = [...DATA_
             throw new ApiError(503, 'alerts_unavailable', 'Alert settings are unavailable');
         response.json({ data: alertService.getSettings() });
     });
+    app.get('/api/alerts/history', (request, response) => {
+        if (!alertService)
+            throw new ApiError(503, 'alerts_unavailable', 'Alert history is unavailable');
+        response.json({ data: alertService.getHistory(parseLimit(request.query['limit'])) });
+    });
     app.put('/api/alerts/settings', (request, response) => {
         if (!alertService)
             throw new ApiError(503, 'alerts_unavailable', 'Alert settings are unavailable');
@@ -60,7 +99,7 @@ export function createApp({ config, store, collector, collectorTypes = [...DATA_
             throw alertConfigurationError(error);
         }
     });
-    app.post('/api/alerts/test', async (request, response) => {
+    app.post('/api/alerts/test', integrationTestRateLimiter.middleware, async (request, response) => {
         if (!alertService)
             throw new ApiError(503, 'alerts_unavailable', 'Alert settings are unavailable');
         const channel = isRecord(request.body) ? request.body['channel'] : undefined;
@@ -75,19 +114,79 @@ export function createApp({ config, store, collector, collectorTypes = [...DATA_
             throw alertConfigurationError(error);
         }
     });
-    app.post('/api/hosts', (request, response) => {
-        const host = parseNutHostInput(request.body);
+    app.get('/api/integrations/influxdb/settings', (_request, response) => {
+        if (!influxDbService) {
+            throw new ApiError(503, 'integration_unavailable', 'InfluxDB integration is unavailable');
+        }
+        response.json({ data: influxDbService.getSettings() });
+    });
+    app.put('/api/integrations/influxdb/settings', (request, response) => {
+        if (!influxDbService) {
+            throw new ApiError(503, 'integration_unavailable', 'InfluxDB integration is unavailable');
+        }
         try {
-            response.status(201).json({ data: collector.addNutHost(host) });
+            response.json({ data: influxDbService.saveSettings(request.body) });
+        }
+        catch (error) {
+            throw influxConfigurationError(error);
+        }
+    });
+    app.post('/api/integrations/influxdb/test', integrationTestRateLimiter.middleware, async (_request, response) => {
+        if (!influxDbService) {
+            throw new ApiError(503, 'integration_unavailable', 'InfluxDB integration is unavailable');
+        }
+        try {
+            await influxDbService.sendTestWrite();
+            response.json({ data: { sent: true } });
+        }
+        catch (error) {
+            throw influxConfigurationError(error);
+        }
+    });
+    app.get('/api/energy-impact/settings', (_request, response) => {
+        if (!energyImpactService) {
+            throw new ApiError(503, 'energy_impact_unavailable', 'Energy impact settings are unavailable');
+        }
+        response.json({ data: energyImpactService.getSettings() });
+    });
+    app.put('/api/energy-impact/settings', (request, response) => {
+        if (!energyImpactService) {
+            throw new ApiError(503, 'energy_impact_unavailable', 'Energy impact settings are unavailable');
+        }
+        try {
+            response.json({ data: energyImpactService.saveSettings(request.body) });
+        }
+        catch (error) {
+            throw energyImpactConfigurationError(error);
+        }
+    });
+    app.post('/api/hosts', (request, response) => {
+        try {
+            if (isRecord(request.body) && request.body['sourceType'] === 'homeassistant') {
+                const host = parseHomeAssistantHostInput(request.body);
+                response.status(201).json({ data: collector.addHomeAssistantHost(host) });
+            }
+            else {
+                const host = parseNutHostInput(request.body);
+                response.status(201).json({ data: collector.addNutHost(host) });
+            }
         }
         catch (error) {
             throw hostMutationError(error);
         }
     });
     app.put('/api/hosts/:id', (request, response) => {
-        const host = parseNutHostInput(request.body);
         try {
-            response.json({ data: collector.updateNutHost(request.params['id'] ?? '', host) });
+            if (isRecord(request.body) && request.body['sourceType'] === 'homeassistant') {
+                const host = parseHomeAssistantHostInput(request.body);
+                response.json({
+                    data: collector.updateHomeAssistantHost(request.params['id'] ?? '', host),
+                });
+            }
+            else {
+                const host = parseNutHostInput(request.body);
+                response.json({ data: collector.updateNutHost(request.params['id'] ?? '', host) });
+            }
         }
         catch (error) {
             throw hostMutationError(error);
@@ -111,22 +210,37 @@ export function createApp({ config, store, collector, collectorTypes = [...DATA_
             throw new ApiError(404, 'not_found', 'Device not found');
         response.json({ data: device });
     });
-    app.get('/api/devices/:id/history', (request, response) => {
-        const deviceId = request.params['id'] ?? '';
+    app.get('/api/devices/:id/history', analyticsRateLimiter.middleware, (request, response) => {
+        const deviceId = routeParam(request.params['id']);
         if (!store.getDevice(deviceId))
             throw new ApiError(404, 'not_found', 'Device not found');
         const range = parseRange(request.query['range']);
         const metrics = parseMetrics(request.query['metrics']);
         response.json({ data: store.getHistory(deviceId, range, metrics) });
     });
-    app.get('/api/devices/:id/outages', (request, response) => {
-        const deviceId = request.params['id'] ?? '';
+    app.get('/api/devices/:id/energy-impact', analyticsRateLimiter.middleware, (request, response) => {
+        if (!energyImpactService) {
+            throw new ApiError(503, 'energy_impact_unavailable', 'Energy impact is unavailable');
+        }
+        const deviceId = routeParam(request.params['id']);
+        if (!store.getDevice(deviceId))
+            throw new ApiError(404, 'not_found', 'Device not found');
+        try {
+            const timeZone = queryString(request.query['timeZone']) ?? 'UTC';
+            response.json({ data: energyImpactService.getImpact(deviceId, timeZone) });
+        }
+        catch (error) {
+            throw energyImpactConfigurationError(error);
+        }
+    });
+    app.get('/api/devices/:id/outages', analyticsRateLimiter.middleware, (request, response) => {
+        const deviceId = routeParam(request.params['id']);
         if (!store.getDevice(deviceId))
             throw new ApiError(404, 'not_found', 'Device not found');
         const range = parseOutageRange(request.query['range']);
         response.json({ data: store.getOutageSummary(deviceId, range) });
     });
-    app.get('/api/events', (request, response) => {
+    app.get('/api/events', analyticsRateLimiter.middleware, (request, response) => {
         const deviceId = queryString(request.query['device']);
         if (deviceId && !store.getDevice(deviceId)) {
             throw new ApiError(404, 'not_found', 'Device not found');
@@ -140,6 +254,23 @@ export function createApp({ config, store, collector, collectorTypes = [...DATA_
         });
         response.json(page);
     });
+    app.get('/api/shutdown-readiness', (_request, response) => {
+        const plans = store.listDevices().map((device) => readShutdownPlan(store, device.id));
+        response.json({ data: plans });
+    });
+    app.put('/api/shutdown-readiness/:deviceId', (request, response) => {
+        const deviceId = request.params['deviceId'] ?? '';
+        if (!store.getDevice(deviceId))
+            throw new ApiError(404, 'not_found', 'UPS device not found');
+        const input = parseShutdownPlanInput(request.body);
+        const plan = {
+            deviceId,
+            ...input,
+            updatedAt: new Date().toISOString(),
+        };
+        store.setAppSetting(`${SHUTDOWN_READINESS_KEY_PREFIX}${deviceId}`, JSON.stringify(plan));
+        response.json({ data: plan });
+    });
     app.post('/api/demo/scenario', (request, response) => {
         const scenario = request.body?.scenario;
         if (typeof scenario !== 'string' || !DEMO_SCENARIOS.some((item) => item.id === scenario)) {
@@ -149,6 +280,14 @@ export function createApp({ config, store, collector, collectorTypes = [...DATA_
             throw new ApiError(404, 'not_found', 'Demo controls are not available');
         }
         response.json({ data: { scenario: collector.getDemoScenario() } });
+    });
+    app.post('/api/demo/ups', (_request, response) => {
+        try {
+            response.status(201).json({ data: collector.addDemoUps() });
+        }
+        catch (error) {
+            throw hostMutationError(error);
+        }
     });
     app.use('/api', (_request, _response) => {
         throw new ApiError(404, 'not_found', 'API endpoint not found');
@@ -258,6 +397,9 @@ function parseCursor(value) {
 function queryString(value) {
     return typeof value === 'string' ? value : undefined;
 }
+function routeParam(value) {
+    return typeof value === 'string' ? value : '';
+}
 function parseNutHostInput(value) {
     if (!isRecord(value)) {
         throw new ApiError(400, 'validation_error', 'Host settings must be an object');
@@ -300,6 +442,145 @@ function parseNutHostInput(value) {
         clearCredentials,
     };
 }
+function parseHomeAssistantHostInput(value) {
+    if (!isRecord(value)) {
+        throw new ApiError(400, 'validation_error', 'Home Assistant settings must be an object');
+    }
+    const name = typeof value['name'] === 'string' ? value['name'].trim() : '';
+    const rawUrl = typeof value['url'] === 'string' ? value['url'].trim() : '';
+    const accessToken = typeof value['accessToken'] === 'string' ? value['accessToken'] : '';
+    if (!name || name.length > 100) {
+        throw new ApiError(400, 'validation_error', 'Name is required and must be 100 characters or fewer');
+    }
+    if (!rawUrl || rawUrl.length > 2048) {
+        throw new ApiError(400, 'validation_error', 'Enter a valid Home Assistant URL');
+    }
+    let url;
+    try {
+        url = new URL(rawUrl);
+    }
+    catch {
+        throw new ApiError(400, 'validation_error', 'Enter an absolute Home Assistant URL');
+    }
+    if ((url.protocol !== 'http:' && url.protocol !== 'https:') ||
+        !url.hostname ||
+        url.username ||
+        url.password ||
+        url.search ||
+        url.hash) {
+        throw new ApiError(400, 'validation_error', 'Home Assistant URL must use HTTP or HTTPS without credentials, query or fragment');
+    }
+    if (accessToken.length > 4096) {
+        throw new ApiError(400, 'validation_error', 'Home Assistant access token is too long');
+    }
+    const rawEntities = value['entities'];
+    if (!isRecord(rawEntities) || !isRecord(rawEntities['metrics'])) {
+        throw new ApiError(400, 'validation_error', 'Map at least one Home Assistant entity');
+    }
+    const metricsInput = rawEntities['metrics'];
+    const metrics = Object.fromEntries(HOME_ASSISTANT_NUMERIC_FIELDS.map((field) => [
+        field,
+        parseHomeAssistantMetric(metricsInput[field], field),
+    ]));
+    const entities = {
+        statusEntityId: parseHomeAssistantEntityId(rawEntities['statusEntityId'], 'UPS status'),
+        onBatteryEntityId: parseHomeAssistantEntityId(rawEntities['onBatteryEntityId'], 'On-battery'),
+        chargingEntityId: parseHomeAssistantEntityId(rawEntities['chargingEntityId'], 'Charging'),
+        lowBatteryEntityId: parseHomeAssistantEntityId(rawEntities['lowBatteryEntityId'], 'Low-battery'),
+        metrics,
+    };
+    if (!entities.statusEntityId &&
+        !entities.onBatteryEntityId &&
+        !entities.chargingEntityId &&
+        !entities.lowBatteryEntityId &&
+        !HOME_ASSISTANT_NUMERIC_FIELDS.some((field) => metrics[field])) {
+        throw new ApiError(400, 'validation_error', 'Map at least one Home Assistant entity');
+    }
+    return {
+        name,
+        url: url.toString().replace(/\/$/, ''),
+        accessToken: accessToken.trim(),
+        entities,
+    };
+}
+function parseHomeAssistantEntityId(value, label) {
+    if (value === null || value === undefined || value === '')
+        return null;
+    if (typeof value !== 'string' ||
+        value.length > 255 ||
+        !/^[a-z0-9_]+\.[a-z0-9_]+$/i.test(value.trim())) {
+        throw new ApiError(400, 'validation_error', `${label} entity ID is invalid`);
+    }
+    return value.trim();
+}
+function parseHomeAssistantMetric(value, field) {
+    if (!isRecord(value)) {
+        throw new ApiError(400, 'validation_error', `The ${field} mapping is invalid`);
+    }
+    const entityId = parseHomeAssistantEntityId(value['entityId'], field);
+    if (!entityId)
+        return null;
+    const scale = value['scale'] === undefined ? 1 : value['scale'];
+    if (typeof scale !== 'number' || !Number.isFinite(scale) || scale <= 0 || scale > 1_000_000) {
+        throw new ApiError(400, 'validation_error', `The ${field} scaling factor must be greater than 0 and no more than 1,000,000`);
+    }
+    return { entityId, scale };
+}
+function parseShutdownPlanInput(value) {
+    if (!isRecord(value) || !Array.isArray(value['dependentSystems'])) {
+        throw new ApiError(400, 'validation_error', 'A list of dependent systems is required');
+    }
+    if (value['dependentSystems'].length > 25) {
+        throw new ApiError(400, 'validation_error', 'List no more than 25 dependent systems');
+    }
+    const dependentSystems = [];
+    const seen = new Set();
+    for (const item of value['dependentSystems']) {
+        if (typeof item !== 'string') {
+            throw new ApiError(400, 'validation_error', 'Dependent system names must be text');
+        }
+        const name = item.trim();
+        if (!name || name.length > 100) {
+            throw new ApiError(400, 'validation_error', 'Dependent system names must contain 1 to 100 characters');
+        }
+        const key = name.toLowerCase();
+        if (!seen.has(key)) {
+            dependentSystems.push(name);
+            seen.add(key);
+        }
+    }
+    const coordination = value['coordination'];
+    if (coordination !== 'unverified' &&
+        coordination !== 'verified' &&
+        coordination !== 'not_configured') {
+        throw new ApiError(400, 'validation_error', 'Choose a valid shutdown coordination status');
+    }
+    return { dependentSystems, coordination: coordination };
+}
+function readShutdownPlan(store, deviceId) {
+    const raw = store.getAppSetting(`${SHUTDOWN_READINESS_KEY_PREFIX}${deviceId}`);
+    if (!raw) {
+        return { deviceId, dependentSystems: [], coordination: 'unverified', updatedAt: null };
+    }
+    let value;
+    try {
+        value = JSON.parse(raw);
+    }
+    catch {
+        throw new ApiError(500, 'settings_error', 'Shutdown readiness settings could not be read');
+    }
+    if (!isRecord(value) ||
+        value['deviceId'] !== deviceId ||
+        !Array.isArray(value['dependentSystems']) ||
+        !value['dependentSystems'].every((item) => typeof item === 'string') ||
+        (value['coordination'] !== 'unverified' &&
+            value['coordination'] !== 'verified' &&
+            value['coordination'] !== 'not_configured') ||
+        (value['updatedAt'] !== null && typeof value['updatedAt'] !== 'string')) {
+        throw new ApiError(500, 'settings_error', 'Shutdown readiness settings could not be read');
+    }
+    return value;
+}
 function isValidHost(host) {
     if (!host || host.length > 253 || /[\s/@?#]/.test(host))
         return false;
@@ -327,6 +608,21 @@ function alertConfigurationError(error) {
         return new ApiError(502, 'alert_delivery_failed', 'The test alert could not be delivered. Check the channel settings and server logs.');
     }
     return new ApiError(500, 'internal_error', 'Alert settings could not be saved');
+}
+function influxConfigurationError(error) {
+    if (error instanceof InfluxConfigurationError) {
+        return new ApiError(400, 'influx_configuration_error', error.message);
+    }
+    if (error instanceof InfluxDeliveryError) {
+        return new ApiError(502, 'influx_delivery_failed', error.message);
+    }
+    return new ApiError(500, 'internal_error', 'InfluxDB settings could not be saved');
+}
+function energyImpactConfigurationError(error) {
+    if (error instanceof EnergyImpactConfigurationError) {
+        return new ApiError(400, 'energy_impact_configuration_error', error.message);
+    }
+    return new ApiError(500, 'internal_error', 'Energy impact could not be calculated');
 }
 const errorHandler = (error, _request, response, _next) => {
     if (error instanceof ApiError) {
