@@ -43,6 +43,25 @@ interface LoginBucket {
   resetAt: number;
 }
 
+class OidcHttpError extends Error {
+  constructor(
+    readonly operation: 'discovery' | 'token_exchange' | 'jwks',
+    readonly status: number,
+    readonly providerError?: string,
+    readonly providerErrorDescription?: string,
+  ) {
+    super(`OIDC ${operation} endpoint returned HTTP ${status}`);
+    this.name = 'OidcHttpError';
+  }
+}
+
+class OidcClaimsError extends Error {
+  constructor(readonly failedClaims: string[]) {
+    super('OIDC ID token claims are invalid');
+    this.name = 'OidcClaimsError';
+  }
+}
+
 export interface AuthStatus {
   authEnabled: boolean;
   authenticated: boolean;
@@ -58,7 +77,7 @@ export class AuthManager {
   private oidcMetadataPromise: Promise<OidcMetadata> | null = null;
   private oidcKeysPromise: Promise<OidcJwk[]> | null = null;
 
-  constructor(private readonly config: AppConfig) { }
+  constructor(private readonly config: AppConfig) {}
 
   get enabled(): boolean {
     return this.config.auth.enabled;
@@ -89,7 +108,11 @@ export class AuthManager {
   }
 
   readonly middleware: RequestHandler = (request, response, next) => {
-    if (!this.config.auth.enabled || this.sessionFor(request) || anonEndpoints.includes(request.originalUrl)) {
+    if (
+      !this.config.auth.enabled ||
+      this.sessionFor(request) ||
+      anonEndpoints.includes(request.originalUrl)
+    ) {
       next();
       return;
     }
@@ -209,8 +232,10 @@ export class AuthManager {
       response.status(404).send('OIDC sign-in is not configured');
       return;
     }
+    let step = 'discovery';
     try {
       const metadata = await this.getOidcMetadata();
+      step = 'authorization_request';
       const verifier = randomBytes(32).toString('base64url');
       const pkceChallenge = createHash('sha256').update(verifier).digest('base64url');
       const state = randomBytes(32).toString('base64url');
@@ -232,7 +257,8 @@ export class AuthManager {
       authorizationUrl.searchParams.set('code_challenge', pkceChallenge);
       authorizationUrl.searchParams.set('code_challenge_method', 'S256');
       response.redirect(302, authorizationUrl.href);
-    } catch {
+    } catch (error) {
+      logOidcFailure('start', step, error);
       this.redirectWithOidcError(response);
     }
   }
@@ -245,28 +271,64 @@ export class AuthManager {
     }
     const state = queryValue(request.query['state']);
     const cookieState = this.cookieValue(request, OIDC_STATE_COOKIE);
-    const transaction =
-      state && cookieState === state ? this.oidcTransactions.get(state) : undefined;
+    const cookieMatchesState = Boolean(state && cookieState === state);
+    const transaction = cookieMatchesState && state ? this.oidcTransactions.get(state) : undefined;
+    const transactionExpired = Boolean(
+      transaction && Date.now() - transaction.createdAt > OIDC_TTL_MS,
+    );
     this.clearCookie(response, OIDC_STATE_COOKIE);
-    if (!state || !transaction || Date.now() - transaction.createdAt > OIDC_TTL_MS) {
+    if (!state || !transaction || transactionExpired) {
+      logOidcFailure('callback', 'state_validation', new Error('OIDC state validation failed'), {
+        statePresent: Boolean(state),
+        stateCookiePresent: Boolean(cookieState),
+        cookieMatchesState,
+        transactionFound: Boolean(transaction),
+        transactionExpired,
+      });
       this.redirectWithOidcError(response);
       return;
     }
     this.oidcTransactions.delete(state);
+    let step = 'authorization_response';
     try {
-      if (queryValue(request.query['error'])) throw new Error('OIDC authorization was denied');
+      const providerError = queryValue(request.query['error']);
+      if (providerError) {
+        logOidcFailure(
+          'callback',
+          'provider_authorization',
+          new Error('OIDC provider denied authorization'),
+          {
+            providerError: safeLogText(providerError),
+            providerErrorDescription: safeLogText(queryValue(request.query['error_description'])),
+          },
+        );
+        this.redirectWithOidcError(response);
+        return;
+      }
       const code = queryValue(request.query['code']);
       if (!code || code.length > 4096) throw new Error('OIDC authorization response is invalid');
+      step = 'discovery';
       const metadata = await this.getOidcMetadata();
+      step = 'token_exchange';
       const tokens = await this.exchangeCode(code, transaction.verifier, metadata);
+      step = 'id_token_validation';
       const claims = await this.verifyIdToken(tokens.id_token, transaction.nonce, metadata);
       const email = typeof claims['email'] === 'string' ? claims['email'].trim().toLowerCase() : '';
-      if (!email || claims['email_verified'] !== true || email !== this.config.auth.email) {
-        throw new Error('OIDC identity does not match the configured email');
+      const emailMatchesConfigured = Boolean(email && email === this.config.auth.email);
+      const emailVerified = claims['email_verified'] === true;
+      if (!emailMatchesConfigured || !emailVerified) {
+        logOidcFailure('callback', 'identity_validation', new Error('OIDC identity was rejected'), {
+          emailClaimPresent: Boolean(email),
+          emailMatchesConfigured,
+          emailVerified,
+        });
+        this.redirectWithOidcError(response);
+        return;
       }
       this.setSessionCookie(response, this.createSession(email));
       response.redirect(303, new URL('/', oidc.redirectUri).href);
-    } catch {
+    } catch (error) {
+      logOidcFailure('callback', step, error);
       this.redirectWithOidcError(response);
     }
   }
@@ -277,7 +339,7 @@ export class AuthManager {
     if (!this.oidcMetadataPromise) {
       const issuer = oidc.issuer;
       const discoveryUrl = `${issuer.replace(/\/$/, '')}/.well-known/openid-configuration`;
-      this.oidcMetadataPromise = fetchJson(discoveryUrl)
+      this.oidcMetadataPromise = fetchJson(discoveryUrl, 'discovery')
         .then((value) => {
           const metadata = value as Partial<OidcMetadata>;
           if (
@@ -338,7 +400,10 @@ export class AuthManager {
       headers,
       body: form,
     });
-    if (!response.ok) throw new Error('OIDC token exchange failed');
+    if (!response.ok) {
+      const details = parseOidcErrorDetails(await response.text().catch(() => ''));
+      throw new OidcHttpError('token_exchange', response.status, ...details);
+    }
     const tokenResponse = await response.text();
     if (tokenResponse.length > 65_536) throw new Error('OIDC token response is too large');
     const tokens = JSON.parse(tokenResponse) as { id_token?: unknown };
@@ -396,27 +461,29 @@ export class AuthManager {
     const audience = claims['aud'];
     const audiences =
       typeof audience === 'string' ? [audience] : Array.isArray(audience) ? audience : [];
-    if (
-      claims['iss'] !== metadata.issuer ||
-      !audiences.includes(oidc.clientId) ||
-      (audiences.length > 1 && claims['azp'] !== oidc.clientId) ||
-      typeof claims['exp'] !== 'number' ||
-      claims['exp'] < now - CLOCK_TOLERANCE_SECONDS ||
-      typeof claims['iat'] !== 'number' ||
-      claims['iat'] > now + CLOCK_TOLERANCE_SECONDS ||
-      (typeof claims['nbf'] === 'number' && claims['nbf'] > now + CLOCK_TOLERANCE_SECONDS) ||
-      claims['nonce'] !== expectedNonce ||
-      typeof claims['sub'] !== 'string' ||
-      claims['sub'].length === 0
-    ) {
-      throw new Error('OIDC ID token claims are invalid');
-    }
+    const invalidClaims = [
+      ...(claims['iss'] !== metadata.issuer ? ['issuer'] : []),
+      ...(!audiences.includes(oidc.clientId) ? ['audience'] : []),
+      ...(audiences.length > 1 && claims['azp'] !== oidc.clientId ? ['authorized_party'] : []),
+      ...(typeof claims['exp'] !== 'number' || claims['exp'] < now - CLOCK_TOLERANCE_SECONDS
+        ? ['expiration']
+        : []),
+      ...(typeof claims['iat'] !== 'number' || claims['iat'] > now + CLOCK_TOLERANCE_SECONDS
+        ? ['issued_at']
+        : []),
+      ...(typeof claims['nbf'] === 'number' && claims['nbf'] > now + CLOCK_TOLERANCE_SECONDS
+        ? ['not_before']
+        : []),
+      ...(claims['nonce'] !== expectedNonce ? ['nonce'] : []),
+      ...(typeof claims['sub'] !== 'string' || claims['sub'].length === 0 ? ['subject'] : []),
+    ];
+    if (invalidClaims.length > 0) throw new OidcClaimsError(invalidClaims);
     return claims;
   }
 
   private async getOidcKeys(metadata: OidcMetadata): Promise<OidcJwk[]> {
     if (!this.oidcKeysPromise) {
-      this.oidcKeysPromise = fetchJson(metadata.jwks_uri)
+      this.oidcKeysPromise = fetchJson(metadata.jwks_uri, 'jwks')
         .then((value) => {
           const keys = isRecord(value) && Array.isArray(value['keys']) ? value['keys'] : null;
           if (!keys || !keys.every(isRecord)) throw new Error('OIDC key set is invalid');
@@ -525,13 +592,16 @@ interface OidcJwk extends JsonWebKey {
   alg?: string;
 }
 
-async function fetchJson(url: string): Promise<unknown> {
+async function fetchJson(url: string, operation: 'discovery' | 'jwks'): Promise<unknown> {
   const response = await fetch(url, {
     headers: { Accept: 'application/json' },
     redirect: 'error',
     signal: AbortSignal.timeout(10_000),
   });
-  if (!response.ok) throw new Error('OIDC endpoint returned an error');
+  if (!response.ok) {
+    const details = parseOidcErrorDetails(await response.text().catch(() => ''));
+    throw new OidcHttpError(operation, response.status, ...details);
+  }
   const text = await response.text();
   if (text.length > 1_000_000) throw new Error('OIDC endpoint response is too large');
   return JSON.parse(text) as unknown;
@@ -571,4 +641,65 @@ function queryValue(value: unknown): string | undefined {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseOidcErrorDetails(
+  body: string,
+): [providerError?: string, providerErrorDescription?: string] {
+  try {
+    const value: unknown = JSON.parse(body.slice(0, 8192));
+    if (!isRecord(value)) return [];
+    const providerError = safeLogText(
+      typeof value['error'] === 'string' ? value['error'] : undefined,
+    );
+    const providerErrorDescription = safeLogText(
+      typeof value['error_description'] === 'string' ? value['error_description'] : undefined,
+    );
+    if (providerError === undefined && providerErrorDescription === undefined) return [];
+    return [providerError, providerErrorDescription];
+  } catch {
+    return [];
+  }
+}
+
+function safeLogText(value: string | undefined): string | undefined {
+  return value
+    ?.replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 300);
+}
+
+function logOidcFailure(
+  flow: 'start' | 'callback',
+  step: string,
+  error: unknown,
+  details: Record<string, unknown> = {},
+): void {
+  const failure: Record<string, unknown> = {
+    level: 'error',
+    message: 'OIDC sign-in failed',
+    flow,
+    step,
+    errorType: error instanceof Error ? error.name : 'UnknownError',
+    reason: safeLogText(error instanceof Error ? error.message : 'Unknown error'),
+  };
+  if (error instanceof OidcHttpError) {
+    failure['operation'] = error.operation;
+    failure['httpStatus'] = error.status;
+    if (error.providerError) failure['providerError'] = error.providerError;
+    if (error.providerErrorDescription) {
+      failure['providerErrorDescription'] = error.providerErrorDescription;
+    }
+  }
+  if (error instanceof OidcClaimsError) failure['invalidClaims'] = error.failedClaims;
+  if (error instanceof Error && error.cause instanceof Error) {
+    failure['causeType'] = error.cause.name;
+    failure['causeReason'] = safeLogText(error.cause.message);
+    if (isRecord(error.cause)) {
+      const code = error.cause['code'];
+      if (typeof code === 'string') failure['causeCode'] = safeLogText(code);
+    }
+  }
+  console.error(JSON.stringify({ ...failure, ...details }));
 }
