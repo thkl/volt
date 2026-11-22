@@ -561,6 +561,13 @@ export class LiveUpdates {
     this.sendEnergyImpactSubscription();
   }
 
+  refreshEnergyImpact(): void {
+    if (!this.energyImpactSubscription) return;
+    const socket = this.socket;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    socket.send(JSON.stringify({ type: 'refresh-energy-impact' }));
+  }
+
   energyImpactFor(deviceId: string): EnergyImpact | null {
     return this.energyImpactUpdates()[deviceId] ?? null;
   }

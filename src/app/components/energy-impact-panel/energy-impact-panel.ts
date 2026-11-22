@@ -1,4 +1,4 @@
-import { Component, OnDestroy, computed, effect, inject, signal } from '@angular/core';
+import { Component, OnDestroy, computed, effect, inject, signal, untracked } from '@angular/core';
 import { DemoState } from '../../demo-state';
 import { LiveUpdates } from '../../live-updates';
 import type { EnergyImpact, EnergyPeriodImpact } from '../../live-updates';
@@ -12,6 +12,7 @@ export class EnergyImpactPanel implements OnDestroy {
   private readonly lowCoverageThresholdPercent = 80;
   readonly state = inject(DemoState);
   private readonly liveUpdates = inject(LiveUpdates);
+  private lastEnergyImpactRevision = this.liveUpdates.energyImpactRevision();
   readonly energyImpact = signal<EnergyImpact | null>(null);
   readonly energyLoading = signal(false);
   readonly energyError = signal('');
@@ -57,17 +58,25 @@ export class EnergyImpactPanel implements OnDestroy {
   private readonly energySelectionEffect = effect(() => {
     const mode = this.state.backendMode();
     const deviceId = this.state.selectedDeviceId();
-    this.liveUpdates.energyImpactRevision();
     if (mode === 'nut' || mode === 'homeassistant' || mode === 'multi' || mode === 'demo') {
-      this.liveUpdates.subscribeEnergyImpact(deviceId);
+      untracked(() => this.liveUpdates.subscribeEnergyImpact(deviceId));
       this.energyLoading.set(true);
       this.energyError.set('');
-      if (this.energyImpact()?.deviceId !== deviceId) this.energyImpact.set(null);
+      if (untracked(() => this.energyImpact())?.deviceId !== deviceId) {
+        this.energyImpact.set(null);
+      }
     } else {
-      this.liveUpdates.subscribeEnergyImpact(null);
+      untracked(() => this.liveUpdates.subscribeEnergyImpact(null));
       this.energyImpact.set(null);
       this.energyLoading.set(false);
     }
+  });
+
+  private readonly energySettingsEffect = effect(() => {
+    const revision = this.liveUpdates.energyImpactRevision();
+    if (revision === this.lastEnergyImpactRevision) return;
+    this.lastEnergyImpactRevision = revision;
+    untracked(() => this.liveUpdates.refreshEnergyImpact());
   });
 
   private readonly energyPushEffect = effect(() => {

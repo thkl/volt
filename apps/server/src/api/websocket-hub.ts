@@ -12,6 +12,7 @@ interface ClientState {
   alive: boolean;
   sessionToken: string | undefined;
   energyImpactSubscription: { deviceId: string; timeZone: string } | null;
+  lastEnergyImpactRefreshAt: number;
 }
 
 export class WebSocketHub {
@@ -130,6 +131,7 @@ export class WebSocketHub {
       alive: true,
       sessionToken: this.authManager.sessionTokenFromHeader(request.headers.cookie),
       energyImpactSubscription: null,
+      lastEnergyImpactRefreshAt: 0,
     });
     client.on('pong', () => {
       const state = this.clientStates.get(client);
@@ -196,6 +198,15 @@ export class WebSocketHub {
       state.energyImpactSubscription = null;
       return;
     }
+    if (message['type'] === 'refresh-energy-impact' && state) {
+      const now = Date.now();
+      if (!state.energyImpactSubscription || now - state.lastEnergyImpactRefreshAt < 1_000) {
+        return;
+      }
+      state.lastEnergyImpactRefreshAt = now;
+      this.sendEnergyImpact(client, state.energyImpactSubscription);
+      return;
+    }
     if (message['type'] === 'subscribe-energy-impact' && state) {
       const deviceId = message['deviceId'];
       if (typeof deviceId !== 'string' || deviceId.length > 255) {
@@ -222,6 +233,12 @@ export class WebSocketHub {
           deviceId,
           message: 'A valid time zone is required',
         });
+        return;
+      }
+      if (
+        state.energyImpactSubscription?.deviceId === deviceId &&
+        state.energyImpactSubscription.timeZone === timeZone
+      ) {
         return;
       }
       state.energyImpactSubscription = { deviceId, timeZone };
