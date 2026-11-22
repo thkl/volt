@@ -1,4 +1,4 @@
-import { Component, effect, inject, signal } from '@angular/core';
+import { Component, effect, inject, signal, untracked } from '@angular/core';
 import { DemoState } from '../../demo-state';
 import { IncidentEvent, LiveUpdates } from '../../live-updates';
 
@@ -29,7 +29,7 @@ export class EventsPage {
       this.liveUpdates.eventRevision();
 
       if (connected) {
-        void this.loadPage(true, false);
+        untracked(() => void this.loadPage(true, false));
       } else if (demo) {
         this.requestId += 1;
         this.loading.set(false);
