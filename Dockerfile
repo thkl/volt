@@ -19,14 +19,16 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/server/package.json ./apps/server/package.json
 RUN pnpm install --prod --filter @volt/server --frozen-lockfile
 
-FROM node:24.22.3-alpine3.24 AS runtime
+FROM alpine:3.24 AS runtime
 
 WORKDIR /app
-RUN addgroup -S -g 10001 volt \
+RUN apk add --no-cache libatomic libstdc++ \
+  && addgroup -S -g 10001 volt \
   && adduser -S -D -H -u 10001 -G volt -h /app -s /sbin/nologin volt \
   && mkdir -p /data \
   && chown volt:volt /data
 
+COPY --from=production-dependencies /usr/local/bin/node /usr/local/bin/node
 COPY --from=production-dependencies --chown=volt:volt /app/node_modules/.pnpm ./node_modules/.pnpm
 COPY --from=production-dependencies --chown=volt:volt /app/apps/server/node_modules ./apps/server/node_modules
 COPY --from=build --chown=volt:volt /app/apps/server/package.json ./apps/server/package.json
