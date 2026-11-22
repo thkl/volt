@@ -1,4 +1,13 @@
-import { Component, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
+import {
+  Component,
+  OnDestroy,
+  OnInit,
+  computed,
+  effect,
+  inject,
+  signal,
+  untracked,
+} from '@angular/core';
 import { DemoState } from '../../demo-state';
 import { AlertHistoryEntry, LiveUpdates } from '../../live-updates';
 
@@ -33,12 +42,15 @@ export class AlertHistoryPage implements OnInit, OnDestroy {
 
   constructor() {
     effect(() => {
-      if (this.state.apiConnected()) {
-        void this.refresh();
-      } else {
-        this.entries.set([]);
-        this.loadError.set('Reconnect to Volt to view persisted alert history.');
-      }
+      const connected = this.state.apiConnected();
+      untracked(() => {
+        if (connected) {
+          void this.refresh();
+        } else {
+          this.entries.set([]);
+          this.loadError.set('Reconnect to Volt to view persisted alert history.');
+        }
+      });
     });
   }
 
